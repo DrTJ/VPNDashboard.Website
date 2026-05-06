@@ -1,0 +1,195 @@
+@page "/build"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject IBuildSettingsStore SettingsStore
+@inject IGitWorkspace GitWorkspace
+@inject IBuildService BuildService
+
+<PageTitle>Build - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Build &amp; Package</h3></div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_isError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Source</h3></div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Branch</label>
+                    <input type="text" class="form-control" @bind="_branch" placeholder="main" />
+                </div>
+
+                <button class="btn btn-info me-2" @onclick="FetchAndPreview" disabled="@(_fetching || _building)">
+                    @if (_fetching) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    <i class="bi bi-cloud-download me-1"></i> Fetch &amp; Preview
+                </button>
+
+                <button class="btn btn-success" @onclick="RunBuild" disabled="@(_building || _commit == null)">
+                    @if (_building) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    <i class="bi bi-hammer me-1"></i> Build &amp; Package
+                </button>
+            </div>
+        </div>
+
+        @if (_commit != null)
+        {
+            <div class="card mt-3">
+                <div class="card-header"><h3 class="card-title">Latest Commit on <code>@_branch</code></h3></div>
+                <div class="card-body">
+                    <dl>
+                        <dt>SHA</dt>
+                        <dd><code>@_commit.Sha</code></dd>
+                        <dt>Author</dt>
+                        <dd>@_commit.Author</dd>
+                        <dt>Date</dt>
+                        <dd>@_commit.Date.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+                        <dt>Message</dt>
+                        <dd>@_commit.Message</dd>
+                    </dl>
+                </div>
+            </div>
+        }
+
+        @if (_artifact != null)
+        {
+            <div class="card mt-3 border-success">
+                <div class="card-header bg-success text-white">
+                    <h3 class="card-title">Build Artifact</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>@_artifact.FileName</strong></p>
+                    <p>Size: @(_artifact.SizeBytes / 1024) KB</p>
+                    <a href="/servers" class="btn btn-primary">
+                        <i class="bi bi-hdd-rack me-1"></i> Go to Servers to Deploy
+                    </a>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Build Output</h3></div>
+            <div class="card-body">
+                @if (_logLines.Any())
+                {
+                    <pre class="bg-dark text-light p-3 rounded" style="max-height: 600px; overflow-y: auto;">@string.Join("\n", _logLines)</pre>
+                }
+                else
+                {
+                    <p class="text-muted">Build output will appear here.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _branch = "main";
+    private CommitInfo? _commit;
+    private BuildArtifact? _artifact;
+    private bool _fetching;
+    private bool _building;
+    private List<string> _logLines = new();
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await SettingsStore.GetAsync();
+            if (!string.IsNullOrEmpty(settings.DefaultBranch))
+                _branch = settings.DefaultBranch;
+        }
+        catch { }
+    }
+
+    private async Task FetchAndPreview()
+    {
+        _fetching = true;
+        _commit = null;
+        _artifact = null;
+        _logLines.Clear();
+        _message = null;
+        StateHasChanged();
+
+        var progress = new Progress<string>(line =>
+        {
+            InvokeAsync(() =>
+            {
+                _logLines.Add(line);
+                StateHasChanged();
+            });
+        });
+
+        try
+        {
+            var settings = await SettingsStore.GetAsync();
+            await GitWorkspace.EnsureClonedAsync(settings, progress);
+            await GitWorkspace.FetchAsync(progress);
+            _commit = await GitWorkspace.GetHeadCommitAsync(_branch);
+            _message = $"Fetched latest: {_commit.ShortSha} by {_commit.Author}";
+            _isError = false;
+        }
+        catch (Exception ex)
+        {
+            _message = $"Fetch failed: {ex.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _fetching = false;
+        }
+    }
+
+    private async Task RunBuild()
+    {
+        if (_commit == null) return;
+
+        _building = true;
+        _artifact = null;
+        _logLines.Clear();
+        _message = null;
+        StateHasChanged();
+
+        var progress = new Progress<string>(line =>
+        {
+            InvokeAsync(() =>
+            {
+                _logLines.Add(line);
+                StateHasChanged();
+            });
+        });
+
+        try
+        {
+            _artifact = await BuildService.BuildAsync(_branch, progress);
+            _message = $"Build succeeded: {_artifact.FileName}";
+            _isError = false;
+        }
+        catch (Exception ex)
+        {
+            _message = $"Build failed: {ex.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _building = false;
+        }
+    }
+}

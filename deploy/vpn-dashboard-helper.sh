@@ -12,9 +12,20 @@ EASYRSA_DIR="/etc/openvpn/server/easy-rsa"
 SERVER_CONF="/etc/openvpn/server/server.conf"
 STATUS_LOG="/var/log/openvpn/openvpn-status.log"
 GROUP_NAME="nobody"
+DASHBOARD_USER="vpndash"
 
 sanitize_name() {
     echo "$1" | sed 's/[^0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-]/_/g'
+}
+
+# Grant the dashboard service user read access to the PKI. easy-rsa often
+# regenerates files (index.txt, crl.pem, issued/*) without preserving ACLs,
+# so we re-apply both the access ACL and the default ACL after any change.
+reapply_pki_acls() {
+    if [[ -d /etc/openvpn/server ]] && command -v setfacl &>/dev/null; then
+        setfacl -R -m "u:${DASHBOARD_USER}:rX" /etc/openvpn/server/ 2>/dev/null || true
+        setfacl -R -d -m "u:${DASHBOARD_USER}:rX" /etc/openvpn/server/ 2>/dev/null || true
+    fi
 }
 
 cmd_install() {
@@ -47,6 +58,7 @@ cmd_install() {
 
     # Enable status log after install
     cmd_enable_status
+    reapply_pki_acls
 }
 
 cmd_uninstall() {
@@ -77,6 +89,7 @@ cmd_add() {
     cd "$EASYRSA_DIR"
     ./easyrsa --batch --days=3650 build-client-full "$client" nopass
 
+    reapply_pki_acls
     echo "Client '$client' added successfully"
 }
 
@@ -99,6 +112,7 @@ cmd_revoke() {
     cp "$EASYRSA_DIR/pki/crl.pem" /etc/openvpn/server/crl.pem
     chown nobody:"$GROUP_NAME" /etc/openvpn/server/crl.pem
 
+    reapply_pki_acls
     echo "Client '$client' revoked successfully"
 }
 

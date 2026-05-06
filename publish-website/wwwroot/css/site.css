@@ -1,0 +1,44 @@
+/* VPN Dashboard — AdminLTE overrides */
+
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-box {
+    width: 400px;
+}
+
+.login-logo b {
+    color: #0d6efd;
+}
+
+.brand-image {
+    font-size: 1.5rem;
+    margin-right: 0.5rem;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.sidebar-brand .brand-link {
+    text-decoration: none;
+}
+
+.nav-pills .nav-link {
+    border-radius: 0;
+}
+
+/* Documentation content styling */
+.card-body h1 { font-size: 1.8rem; margin-top: 1rem; }
+.card-body h2 { font-size: 1.5rem; margin-top: 1rem; border-bottom: 1px solid #dee2e6; padding-bottom: 0.3rem; }
+.card-body h3 { font-size: 1.25rem; margin-top: 0.75rem; }
+.card-body pre { background-color: #f4f4f5; padding: 1rem; border-radius: 0.375rem; overflow-x: auto; }
+.card-body code { font-size: 0.875em; }
+.card-body table { width: 100%; margin-bottom: 1rem; }
+.card-body table th, .card-body table td { padding: 0.5rem; border: 1px solid #dee2e6; }
+.card-body table thead th { background-color: #f8f9fa; }

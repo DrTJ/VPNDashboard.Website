@@ -1,0 +1,460 @@
+@page "/servers"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject IServerStore ServerStore
+@inject ISshSessionFactory SshFactory
+@inject NavigationManager Navigation
+
+<PageTitle>Servers - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Servers</h3></div>
+            <div class="col-sm-6 text-end">
+                <AuthorizeView Roles="Admin">
+                    <button class="btn btn-primary" @onclick="ShowAddModal">
+                        <i class="bi bi-plus-circle me-1"></i> Add Server
+                    </button>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_isError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">All Servers</h3>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Host</th>
+                    <th>Tier</th>
+                    <th>Last Deployed</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var server in _servers)
+                {
+                    <tr>
+                        <td>@server.Name</td>
+                        <td><code>@server.Host:@server.Port</code></td>
+                        <td>
+                            @if (server.Tier == ServerTier.Paid)
+                            {
+                                <span class="badge text-bg-warning">Paid</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-success">Free</span>
+                            }
+                        </td>
+                        <td>
+                            @if (server.LastDeployedAt != null)
+                            {
+                                <span>@server.LastDeployedAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Never</span>
+                            }
+                        </td>
+                        <td>
+                            <a href="/servers/@server.Id" class="btn btn-sm btn-primary me-1">
+                                <i class="bi bi-gear"></i> Manage
+                            </a>
+                            <AuthorizeView Roles="Admin">
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => ShowEditModal(server)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowDeleteModal(server)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+                @if (!_servers.Any())
+                {
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">No servers configured. Add one to get started.</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Add / Edit Server Modal *@
+@if (_showFormModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_editingServer != null ? "Edit Server" : "Add Server")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseFormModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-control" @bind="_form.Name" placeholder="e.g. Production Server" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Tier</label>
+                            <select class="form-select" @bind="_form.Tier">
+                                <option value="@ServerTier.Paid">Paid</option>
+                                <option value="@ServerTier.Free">Free</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label">Host</label>
+                            <input type="text" class="form-control" @bind="_form.Host" placeholder="e.g. 5.161.115.89" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Port</label>
+                            <input type="number" class="form-control" @bind="_form.Port" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">SSH Username</label>
+                            <input type="text" class="form-control" @bind="_form.Username" placeholder="e.g. root" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">SSH Password</label>
+                            <input type="password" class="form-control" @bind="_form.Password"
+                                   placeholder="@(_editingServer != null ? "Leave blank to keep current" : "Required")" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Install Directory</label>
+                            <input type="text" class="form-control" @bind="_form.InstallDir" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Service Name</label>
+                            <input type="text" class="form-control" @bind="_form.ServiceName" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Service User</label>
+                            <input type="text" class="form-control" @bind="_form.ServiceUser" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" @bind="_form.Notes" rows="2"></textarea>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_testResult))
+                    {
+                        <div class="alert @(_testSuccess ? "alert-success" : "alert-danger") mt-2">
+                            @_testResult
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-info" @onclick="TestConnection" disabled="@_busy">
+                        @if (_testing) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        <i class="bi bi-plug me-1"></i> Test Connection
+                    </button>
+                    <button class="btn btn-secondary" @onclick="CloseFormModal" disabled="@_busy">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveServer" disabled="@_busy">
+                        @if (_busy && !_testing) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Delete Confirmation Modal *@
+@if (_showDeleteModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Delete Server</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => _showDeleteModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong>@_deleteTarget?.Name</strong> (@_deleteTarget?.Host)?</p>
+                    <p class="text-danger">This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showDeleteModal = false">Cancel</button>
+                    <button class="btn btn-danger" @onclick="DeleteServer" disabled="@_busy">
+                        @if (_busy) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<TargetServer> _servers = new();
+    private string? _message;
+    private bool _isError;
+    private bool _busy;
+    private bool _testing;
+
+    // Form modal
+    private bool _showFormModal;
+    private TargetServer? _editingServer;
+    private ServerFormModel _form = new();
+    private string? _testResult;
+    private bool _testSuccess;
+
+    // Delete modal
+    private bool _showDeleteModal;
+    private TargetServer? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServers();
+    }
+
+    private async Task LoadServers()
+    {
+        _servers = await ServerStore.GetAllAsync();
+    }
+
+    private void ShowAddModal()
+    {
+        _editingServer = null;
+        _form = new ServerFormModel();
+        _testResult = null;
+        _showFormModal = true;
+    }
+
+    private void ShowEditModal(TargetServer server)
+    {
+        _editingServer = server;
+        _form = new ServerFormModel
+        {
+            Name = server.Name,
+            Tier = server.Tier,
+            Host = server.Host,
+            Port = server.Port,
+            Username = server.Username,
+            InstallDir = server.InstallDir,
+            ServiceName = server.ServiceName,
+            ServiceUser = server.ServiceUser,
+            Notes = server.Notes
+        };
+        _testResult = null;
+        _showFormModal = true;
+    }
+
+    private void CloseFormModal()
+    {
+        _showFormModal = false;
+        _editingServer = null;
+    }
+
+    private async Task SaveServer()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name) || string.IsNullOrWhiteSpace(_form.Host) ||
+            string.IsNullOrWhiteSpace(_form.Username))
+        {
+            _message = "Name, host, and username are required.";
+            _isError = true;
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (_editingServer != null)
+            {
+                _editingServer.Name = _form.Name;
+                _editingServer.Tier = _form.Tier;
+                _editingServer.Host = _form.Host;
+                _editingServer.Port = _form.Port;
+                _editingServer.Username = _form.Username;
+                _editingServer.InstallDir = _form.InstallDir;
+                _editingServer.ServiceName = _form.ServiceName;
+                _editingServer.ServiceUser = _form.ServiceUser;
+                _editingServer.Notes = _form.Notes;
+                await ServerStore.UpdateAsync(_editingServer, string.IsNullOrEmpty(_form.Password) ? null : _form.Password);
+                _message = $"Server '{_form.Name}' updated.";
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(_form.Password))
+                {
+                    _message = "Password is required for new servers.";
+                    _isError = true;
+                    _busy = false;
+                    return;
+                }
+
+                var server = new TargetServer
+                {
+                    Name = _form.Name,
+                    Tier = _form.Tier,
+                    Host = _form.Host,
+                    Port = _form.Port,
+                    Username = _form.Username,
+                    InstallDir = _form.InstallDir,
+                    ServiceName = _form.ServiceName,
+                    ServiceUser = _form.ServiceUser,
+                    Notes = _form.Notes
+                };
+                await ServerStore.CreateAsync(server, _form.Password);
+                _message = $"Server '{_form.Name}' added.";
+            }
+
+            _isError = false;
+            _showFormModal = false;
+            await LoadServers();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task TestConnection()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Host) || string.IsNullOrWhiteSpace(_form.Username))
+        {
+            _testResult = "Host and username are required.";
+            _testSuccess = false;
+            return;
+        }
+
+        var password = _form.Password;
+        if (string.IsNullOrEmpty(password) && _editingServer != null)
+        {
+            try
+            {
+                var store = (ServerStore)ServerStore;
+                password = store.DecryptPassword(_editingServer);
+            }
+            catch
+            {
+                _testResult = "No password available. Enter the password to test.";
+                _testSuccess = false;
+                return;
+            }
+        }
+
+        if (string.IsNullOrEmpty(password))
+        {
+            _testResult = "Password is required to test connection.";
+            _testSuccess = false;
+            return;
+        }
+
+        _testing = true;
+        _busy = true;
+        _testResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await Task.Run(() =>
+            {
+                var connInfo = new Renci.SshNet.ConnectionInfo(
+                    _form.Host, _form.Port, _form.Username,
+                    new Renci.SshNet.PasswordAuthenticationMethod(_form.Username, password))
+                {
+                    Timeout = TimeSpan.FromSeconds(10)
+                };
+                using var client = new Renci.SshNet.SshClient(connInfo);
+                client.Connect();
+
+                var sudoCheck = client.RunCommand("sudo -n true 2>/dev/null && echo OK || echo NOSUDO");
+                var sudoOk = sudoCheck.Result.Trim() == "OK";
+
+                client.Disconnect();
+
+                sw.Stop();
+                _testResult = $"Connected in {sw.ElapsedMilliseconds}ms.";
+                if (!sudoOk)
+                    _testResult += " Warning: sudo NOPASSWD not configured — deploys may fail.";
+                _testSuccess = true;
+            });
+        }
+        catch (Exception ex)
+        {
+            _testResult = $"Connection failed: {ex.Message}";
+            _testSuccess = false;
+        }
+        finally
+        {
+            _testing = false;
+            _busy = false;
+        }
+    }
+
+    private void ShowDeleteModal(TargetServer server)
+    {
+        _deleteTarget = server;
+        _showDeleteModal = true;
+    }
+
+    private async Task DeleteServer()
+    {
+        if (_deleteTarget == null) return;
+        _busy = true;
+
+        try
+        {
+            await ServerStore.DeleteAsync(_deleteTarget.Id);
+            _message = $"Server '{_deleteTarget.Name}' deleted.";
+            _isError = false;
+            _showDeleteModal = false;
+            await LoadServers();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private class ServerFormModel
+    {
+        public string Name { get; set; } = "";
+        public ServerTier Tier { get; set; } = ServerTier.Paid;
+        public string Host { get; set; } = "";
+        public int Port { get; set; } = 22;
+        public string Username { get; set; } = "root";
+        public string Password { get; set; } = "";
+        public string InstallDir { get; set; } = "/opt/vpn-dashboard";
+        public string ServiceName { get; set; } = "vpn-dashboard";
+        public string ServiceUser { get; set; } = "vpndash";
+        public string? Notes { get; set; }
+    }
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=VPN Dashboard Admin Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=vpndashadmin
+Group=vpndashadmin
+WorkingDirectory=/opt/vpndashboard-admin
+ExecStart=/usr/bin/dotnet /opt/vpndashboard-admin/VPNDashboard.AdminWeb.dll
+Restart=always
+RestartSec=10
+TimeoutStopSec=10
+SyslogIdentifier=vpndashboard-admin
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5051
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+Environment=DOTNET_ROOT=/usr/share/dotnet
+
+[Install]
+WantedBy=multi-user.target

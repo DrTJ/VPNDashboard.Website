@@ -21,6 +21,14 @@
             <p>Client Profiles</p>
         </a>
     </li>
+    <AuthorizeView Roles="Admin">
+        <li class="nav-item">
+            <a href="/subscriptions" class="nav-link @(currentUrl == "subscriptions" ? "active" : "")">
+                <i class="nav-icon bi bi-calendar-event"></i>
+                <p>Subscriptions</p>
+            </a>
+        </li>
+    </AuthorizeView>
     <li class="nav-item">
         <a href="/connected" class="nav-link @(currentUrl == "connected" ? "active" : "")">
             <i class="nav-icon bi bi-broadcast"></i>

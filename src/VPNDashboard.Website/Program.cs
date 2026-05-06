@@ -49,7 +49,9 @@ builder.Services.AddScoped<OpenVpnReader>();
 builder.Services.AddScoped<OpenVpnAdmin>();
 builder.Services.AddScoped<OpenVpnInstaller>();
 builder.Services.AddScoped<UserAdminService>();
+builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddHostedService<ConnectedClientsBackgroundService>();
+builder.Services.AddHostedService<SubscriptionScheduler>();
 
 // SignalR
 builder.Services.AddSignalR();

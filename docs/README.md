@@ -1,63 +1,99 @@
 # VPN Dashboard
 
-A web-based management dashboard for OpenVPN servers, built with ASP.NET Core 8 Blazor Server and AdminLTE 4.
+A two-project solution for deploying and centrally managing OpenVPN servers, built with .NET 8, Blazor Server, and AdminLTE 4.
 
-## Features
+## Projects
 
-- **Install/Uninstall OpenVPN** directly from the web UI (uses Nyr's openvpn-install script)
-- **Manage client profiles** — add, revoke, and download `.ovpn` configuration files
-- **Live connected clients** — real-time view of who's connected (auto-refreshes every 5 seconds)
-- **Server management** — view configuration, reload service, read journal logs
-- **Secure** — ASP.NET Core Identity with SQLite, unprivileged service user, sudoers-whitelisted helper script
-- **AdminLTE 4 UI** — polished admin interface with Bootstrap 5
+### VPNDashboard.Website
+
+`src/VPNDashboard.Website/`
+
+Blazor Server app that runs on each VPN server. Manages OpenVPN directly: client profiles, real-time connected-client monitoring, subscriptions, and a server setup wizard.
+
+- **Docs:** [`docs/website/`](website/)
+
+### VPNDashboard.AdminWeb
+
+`src/VPNDashboard.AdminWeb/`
+
+Blazor Server admin panel for centrally managing multiple VPN Dashboard deployments. Server inventory with Free/Paid tiers, build from GitHub, one-click deploy over SSH, and role-based access (Admin / Operator / Viewer).
+
+- **Docs:** [`docs/adminweb/`](adminweb/)
+
+## Solution Structure
+
+```
+VPNDashboard.Website.sln
+├── src/
+│   ├── VPNDashboard.Website/        # Per-server dashboard
+│   │   ├── Components/Pages/        # Blazor pages
+│   │   ├── Data/                    # EF Core + SQLite
+│   │   ├── Models/                  # Domain models
+│   │   ├── Services/                # OpenVPN integration
+│   │   └── wwwroot/                 # AdminLTE 4 assets
+│   └── VPNDashboard.AdminWeb/       # Central admin panel
+│       ├── Components/Pages/        # Blazor pages
+│       ├── Data/                    # EF Core + SQLite
+│       ├── Hubs/                    # SignalR (live build logs)
+│       ├── Models/                  # Domain models
+│       ├── Services/                # Build, deploy, SSH
+│       └── wwwroot/                 # AdminLTE 4 assets
+├── deploy/                          # Install scripts
+└── docs/                            # Documentation (this folder)
+    ├── website/                     # Website-specific docs
+    └── adminweb/                    # AdminWeb-specific docs
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | .NET 8, ASP.NET Core |
+| UI | Blazor Server, AdminLTE 4 (Bootstrap 5) |
+| Database | EF Core with SQLite |
+| Auth | ASP.NET Core Identity |
+| Real-time | SignalR |
+| Remote ops | SSH.NET (AdminWeb only) |
 
 ## Quick Start
 
-**On your development machine** (requires .NET 8 SDK):
+Both projects require the .NET 8 SDK to build.
+
+**VPNDashboard.Website:**
 
 ```bash
-git clone <repo-url> vpn-dashboard
-cd vpn-dashboard
-dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish
-tar czf /tmp/vpn-dashboard-release.tar.gz publish/ deploy/ docs/
-scp /tmp/vpn-dashboard-release.tar.gz root@<server-ip>:/tmp/
+dotnet run --project src/VPNDashboard.Website
 ```
 
-**On the server:**
+**VPNDashboard.AdminWeb:**
 
 ```bash
-mkdir -p /tmp/vpn-dashboard && cd /tmp/vpn-dashboard
-tar xzf /tmp/vpn-dashboard-release.tar.gz
-
-# Fedora:
-sudo ./deploy/install.sh
-
-# Ubuntu / Debian:
-sudo ./deploy/install-ubuntu.sh
+dotnet run --project src/VPNDashboard.AdminWeb
 ```
 
-Then open `http://<server-ip>/` in your browser.
+**Publish for deployment:**
 
-> **Note:** The server only needs the .NET 8 **runtime**, not the SDK. Building must be done on a development machine. See the full installation guides for details.
+```bash
+dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish/website
+dotnet publish src/VPNDashboard.AdminWeb/VPNDashboard.AdminWeb.csproj -c Release -o publish/adminweb
+```
 
 ## Documentation
 
-- [Install on Fedora](INSTALL-FEDORA.md) — full step-by-step Fedora installation guide
-- [Install on Ubuntu](INSTALL-UBUNTU.md) — full step-by-step Ubuntu/Debian installation guide
-- [OpenVPN Setup Wizard](OPENVPN-SETUP-WIZARD.md) — how the in-app installer works
-- [OpenVPN Uninstall](OPENVPN-UNINSTALL.md) — what the uninstall action removes
-- [Configuration](CONFIGURATION.md) — all settings and environment variables
-- [Security](SECURITY.md) — security model, threat model, hardening
-- [Operations](OPERATIONS.md) — backup, upgrade, troubleshooting
-- [Uninstall](UNINSTALL.md) — removing the dashboard and/or OpenVPN
+### General
 
-## Architecture
+- [Installation — Fedora](INSTALL-FEDORA.md)
+- [Installation — Ubuntu / Debian](INSTALL-UBUNTU.md)
+- [Configuration](CONFIGURATION.md)
+- [Security](SECURITY.md)
+- [Operations](OPERATIONS.md)
+- [Uninstall](UNINSTALL.md)
+- [Style Guide](STYLE.md)
 
-The dashboard runs as a systemd service (`vpn-dashboard.service`) behind nginx. It communicates with OpenVPN via:
+### OpenVPN
 
-- **Reading** the easy-rsa PKI directly (`/etc/openvpn/server/easy-rsa/pki/`)
-- **Reading** the OpenVPN status log (`/var/log/openvpn/openvpn-status.log`)
-- **Executing** privileged operations through a whitelisted bash helper (`vpn-dashboard-helper.sh`) via sudo
+- [OpenVPN Setup Wizard](OPENVPN-SETUP-WIZARD.md)
+- [OpenVPN Uninstall](OPENVPN-UNINSTALL.md)
 
 ## License
 

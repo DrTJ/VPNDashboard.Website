@@ -110,9 +110,12 @@ visudo -c -f /etc/sudoers.d/vpn-dashboard || {
 
 # 6. Set up PKI read access for vpndash
 echo "[6/9] Setting up PKI read permissions..."
-if [[ -d /etc/openvpn/server/easy-rsa/pki ]]; then
-    setfacl -R -m u:${SERVICE_USER}:rX /etc/openvpn/server/easy-rsa/pki/ 2>/dev/null || true
+if [[ -d /etc/openvpn/server ]]; then
+    # Apply ACL to existing files...
     setfacl -R -m u:${SERVICE_USER}:rX /etc/openvpn/server/ 2>/dev/null || true
+    # ...and a default ACL so files created later by easy-rsa (e.g. when the
+    # PKI is regenerated or new clients are issued) inherit read access.
+    setfacl -R -d -m u:${SERVICE_USER}:rX /etc/openvpn/server/ 2>/dev/null || true
 fi
 
 # 7. Install systemd unit

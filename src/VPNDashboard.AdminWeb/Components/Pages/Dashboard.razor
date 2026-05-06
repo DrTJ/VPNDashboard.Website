@@ -1,0 +1,147 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject IServerStore ServerStore
+@inject IServerStatusService StatusService
+
+<PageTitle>Dashboard - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Dashboard</h3></div>
+            <div class="col-sm-6 text-end">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshAll" disabled="@_loading">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" role="status"></div>
+        <p class="mt-2 text-muted">Loading servers...</p>
+    </div>
+}
+else
+{
+    <div class="row">
+        <!-- Paid Servers -->
+        <div class="col-lg-6">
+            <h5 class="mb-3"><i class="bi bi-star-fill text-warning me-1"></i> Paid Servers</h5>
+            @if (!_paidServers.Any())
+            {
+                <div class="card"><div class="card-body text-muted text-center py-4">No paid servers configured</div></div>
+            }
+            @foreach (var server in _paidServers)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-1">@server.Server.Name</h5>
+                                <small class="text-muted">@server.Server.Host:@server.Server.Port</small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                @StatusBadge(server.Status)
+                                <a href="/servers/@server.Server.Id" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-gear me-1"></i> Manage
+                                </a>
+                            </div>
+                        </div>
+                        @if (server.Server.LastDeployedAt != null)
+                        {
+                            <small class="text-muted d-block mt-2">
+                                Last deployed: @server.Server.LastDeployedAt.Value.ToString("yyyy-MM-dd HH:mm")
+                                (@(server.Server.LastDeployedCommitSha?[..Math.Min(7, server.Server.LastDeployedCommitSha.Length)] ?? ""))
+                            </small>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Free Servers -->
+        <div class="col-lg-6">
+            <h5 class="mb-3"><i class="bi bi-gift text-success me-1"></i> Free Servers</h5>
+            @if (!_freeServers.Any())
+            {
+                <div class="card"><div class="card-body text-muted text-center py-4">No free servers configured</div></div>
+            }
+            @foreach (var server in _freeServers)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-1">@server.Server.Name</h5>
+                                <small class="text-muted">@server.Server.Host:@server.Server.Port</small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                @StatusBadge(server.Status)
+                                <a href="/servers/@server.Server.Id" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-gear me-1"></i> Manage
+                                </a>
+                            </div>
+                        </div>
+                        @if (server.Server.LastDeployedAt != null)
+                        {
+                            <small class="text-muted d-block mt-2">
+                                Last deployed: @server.Server.LastDeployedAt.Value.ToString("yyyy-MM-dd HH:mm")
+                                (@(server.Server.LastDeployedCommitSha?[..Math.Min(7, server.Server.LastDeployedCommitSha.Length)] ?? ""))
+                            </small>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private record ServerWithStatus(TargetServer Server, string Status);
+    private List<ServerWithStatus> _paidServers = new();
+    private List<ServerWithStatus> _freeServers = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAll();
+    }
+
+    private async Task RefreshAll()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var servers = await ServerStore.GetAllAsync();
+        var results = new List<ServerWithStatus>();
+
+        foreach (var s in servers)
+        {
+            var status = await StatusService.GetStatusAsync(s);
+            results.Add(new ServerWithStatus(s, status));
+        }
+
+        _paidServers = results.Where(s => s.Server.Tier == ServerTier.Paid).ToList();
+        _freeServers = results.Where(s => s.Server.Tier == ServerTier.Free).ToList();
+        _loading = false;
+    }
+
+    private static MarkupString StatusBadge(string status)
+    {
+        var (css, icon) = status switch
+        {
+            "active" => ("text-bg-success", "bi-check-circle-fill"),
+            "inactive" => ("text-bg-secondary", "bi-pause-circle-fill"),
+            "failed" => ("text-bg-danger", "bi-x-circle-fill"),
+            "unreachable" => ("text-bg-warning", "bi-exclamation-triangle-fill"),
+            _ => ("text-bg-secondary", "bi-question-circle-fill")
+        };
+
+        return new MarkupString($"<span class=\"badge {css}\"><i class=\"bi {icon} me-1\"></i>{status}</span>");
+    }
+}

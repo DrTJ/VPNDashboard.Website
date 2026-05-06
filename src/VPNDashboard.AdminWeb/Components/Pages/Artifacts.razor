@@ -1,0 +1,157 @@
+@page "/artifacts"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject IConfiguration Config
+
+<PageTitle>Artifacts - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Build Artifacts</h3></div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_isError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>File Name</th>
+                    <th>Branch</th>
+                    <th>Commit</th>
+                    <th>Built At</th>
+                    <th>Size</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var a in _artifacts)
+                {
+                    <tr>
+                        <td><code>@a.FileName</code></td>
+                        <td><span class="badge text-bg-info">@a.Branch</span></td>
+                        <td>
+                            <code>@a.CommitSha[..Math.Min(7, a.CommitSha.Length)]</code>
+                            <br /><small class="text-muted">@a.CommitMessage</small>
+                        </td>
+                        <td>@a.BuiltAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(a.SizeBytes / 1024) KB</td>
+                        <td>
+                            <AuthorizeView Roles="Admin">
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(a)" disabled="@_busy">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+                @if (!_artifacts.Any())
+                {
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">No artifacts built yet. Go to the Build page to create one.</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_deleteTarget != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Delete Artifact</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => _deleteTarget = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Delete <strong>@_deleteTarget.FileName</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _deleteTarget = null">Cancel</button>
+                    <button class="btn btn-danger" @onclick="DeleteArtifact" disabled="@_busy">
+                        @if (_busy) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<BuildArtifact> _artifacts = new();
+    private BuildArtifact? _deleteTarget;
+    private bool _busy;
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadArtifacts();
+    }
+
+    private async Task LoadArtifacts()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Data.AdminDbContext>();
+        _artifacts = await db.BuildArtifacts
+            .OrderByDescending(a => a.BuiltAt)
+            .ToListAsync();
+    }
+
+    private void ConfirmDelete(BuildArtifact artifact)
+    {
+        _deleteTarget = artifact;
+    }
+
+    private async Task DeleteArtifact()
+    {
+        if (_deleteTarget == null) return;
+        _busy = true;
+
+        try
+        {
+            var artifactDir = Config.GetValue<string>("Build:ArtifactDir") ?? "/var/lib/vpndashboard-admin/artifacts";
+            var filePath = Path.Combine(artifactDir, _deleteTarget.FileName);
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AdminDbContext>();
+            var entity = await db.BuildArtifacts.FindAsync(_deleteTarget.Id);
+            if (entity != null)
+            {
+                db.BuildArtifacts.Remove(entity);
+                await db.SaveChangesAsync();
+            }
+
+            _message = $"Deleted {_deleteTarget.FileName}";
+            _isError = false;
+            _deleteTarget = null;
+            await LoadArtifacts();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _isError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

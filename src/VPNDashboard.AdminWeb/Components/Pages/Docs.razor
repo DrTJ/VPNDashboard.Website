@@ -1,0 +1,133 @@
+@page "/docs"
+@page "/docs/{*Slug}"
+@using Markdig
+@inject IConfiguration Config
+@inject IJSRuntime JS
+
+<PageTitle>Documentation - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Documentation</h3></div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Contents</h3></div>
+            <div class="card-body p-0">
+                <ul class="nav nav-pills flex-column">
+                    @foreach (var doc in _docs)
+                    {
+                        var isActive = doc.Slug == _currentSlug;
+                        <li class="nav-item">
+                            <a href="/docs/@doc.Slug" class="nav-link @(isActive ? "active" : "")">
+                                <i class="bi bi-file-earmark-text me-2"></i>@doc.Title
+                            </a>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-body">
+                @if (_htmlContent != null)
+                {
+                    @((MarkupString)_htmlContent)
+                }
+                else
+                {
+                    <p class="text-muted">Select a document from the sidebar.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Slug { get; set; }
+
+    private string? _currentSlug;
+    private string? _htmlContent;
+    private List<DocEntry> _docs = new();
+
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .UsePipeTables()
+        .UseAutoLinks()
+        .Build();
+
+    protected override void OnInitialized()
+    {
+        LoadDocList();
+    }
+
+    protected override void OnParametersSet()
+    {
+        _currentSlug = Slug ?? _docs.FirstOrDefault()?.Slug;
+        LoadContent();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_htmlContent != null)
+        {
+            await JS.InvokeVoidAsync("highlightAllCode");
+        }
+    }
+
+    private void LoadDocList()
+    {
+        var docsPath = Config.GetValue<string>("Docs:Path");
+        var paths = new[] { docsPath, "docs", Path.Combine(AppContext.BaseDirectory, "docs") };
+
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) continue;
+
+            _docs = Directory.GetFiles(path, "*.md")
+                .OrderBy(f => Path.GetFileName(f) == "README.md" ? "00" : Path.GetFileName(f))
+                .Select(f => new DocEntry
+                {
+                    Slug = Path.GetFileNameWithoutExtension(f),
+                    Title = FormatTitle(Path.GetFileNameWithoutExtension(f)),
+                    FilePath = f
+                })
+                .ToList();
+
+            if (_docs.Count > 0) return;
+        }
+    }
+
+    private void LoadContent()
+    {
+        var doc = _docs.FirstOrDefault(d => d.Slug == _currentSlug);
+        if (doc != null && File.Exists(doc.FilePath))
+        {
+            var markdown = File.ReadAllText(doc.FilePath);
+            _htmlContent = Markdown.ToHtml(markdown, Pipeline);
+        }
+        else
+        {
+            _htmlContent = null;
+        }
+    }
+
+    private static string FormatTitle(string filename)
+    {
+        return filename.Replace("-", " ").Replace("_", " ");
+    }
+
+    private class DocEntry
+    {
+        public string Slug { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string FilePath { get; set; } = "";
+    }
+}

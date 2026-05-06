@@ -3,7 +3,9 @@
 @rendermode InteractiveServer
 @inject OpenVpnReader VpnReader
 @inject OpenVpnAdmin VpnAdmin
+@inject SubscriptionService Subs
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Client Profiles - VPN Dashboard</PageTitle>
@@ -14,6 +16,9 @@
             <div class="col-sm-6"><h3 class="mb-0">Client Profiles</h3></div>
             <div class="col-sm-6 text-end">
                 <AuthorizeView Roles="Admin">
+                    <a href="/subscriptions" class="btn btn-outline-secondary me-2">
+                        <i class="bi bi-calendar-event me-1"></i> Subscriptions
+                    </a>
                     <button class="btn btn-primary" @onclick="ShowAddDialog">
                         <i class="bi bi-plus-circle me-1"></i> Add Client
                     </button>
@@ -120,6 +125,43 @@
                                placeholder="e.g. phone, laptop, john" />
                         <div class="form-text">Only letters, numbers, hyphens and underscores are allowed.</div>
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Schedule</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" id="addSchedUnlimited"
+                                       checked="@(_newSchedule == ScheduleType.Unlimited)"
+                                       @onchange="() => _newSchedule = ScheduleType.Unlimited" />
+                                <label class="form-check-label" for="addSchedUnlimited">Unlimited</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" id="addSchedPeriodic"
+                                       checked="@(_newSchedule == ScheduleType.Periodic)"
+                                       @onchange="() => _newSchedule = ScheduleType.Periodic" />
+                                <label class="form-check-label" for="addSchedPeriodic">Periodic</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Start (optional)</label>
+                        <input type="datetime-local" class="form-control" @bind="_newStartLocal" />
+                        <div class="form-text">Leave empty to start immediately.</div>
+                    </div>
+
+                    @if (_newSchedule == ScheduleType.Periodic)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">End</label>
+                            <input type="datetime-local" class="form-control" @bind="_newEndLocal" />
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_addError))
+                    {
+                        <div class="alert alert-danger mb-0">@_addError</div>
+                    }
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="() => _showAddModal = false" disabled="@_busy">Cancel</button>
@@ -170,6 +212,10 @@
     private bool _showAddModal;
     private bool _showRevokeModal;
     private string _newClientName = string.Empty;
+    private ScheduleType _newSchedule = ScheduleType.Unlimited;
+    private DateTime? _newStartLocal;
+    private DateTime? _newEndLocal;
+    private string? _addError;
     private string? _revokeClientName;
     private string? _message;
     private bool _messageIsError;
@@ -188,6 +234,10 @@
     private void ShowAddDialog()
     {
         _newClientName = string.Empty;
+        _newSchedule = ScheduleType.Unlimited;
+        _newStartLocal = null;
+        _newEndLocal = null;
+        _addError = null;
         _showAddModal = true;
     }
 
@@ -199,23 +249,44 @@
 
     private async Task AddClient()
     {
+        _addError = null;
         if (string.IsNullOrWhiteSpace(_newClientName) || !await IsAdminAsync())
             return;
 
-        _busy = true;
-        var (success, output) = await VpnAdmin.AddClientAsync(_newClientName);
-        _busy = false;
-        _showAddModal = false;
+        var startUtc = _newStartLocal?.ToUniversalTime();
+        var endUtc = _newEndLocal?.ToUniversalTime();
 
-        if (success)
+        _busy = true;
+        try
         {
-            _message = $"Client '{OpenVpnAdmin.SanitizeClientName(_newClientName)}' added successfully.";
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            var result = await Subs.CreateAsync(
+                _newClientName,
+                _newSchedule,
+                startUtc,
+                endUtc,
+                notes: null,
+                createdByUserId: userId);
+
+            if (!result.Success)
+            {
+                _addError = result.Error;
+                return;
+            }
+
+            _showAddModal = false;
+            var sub = result.Subscription!;
+            if (sub.Status == SubscriptionStatus.Active)
+                _message = $"Client '{sub.ProfileName}' added successfully.";
+            else
+                _message = $"Subscription for '{sub.ProfileName}' scheduled. The profile will be issued automatically at the start time.";
             _messageIsError = false;
         }
-        else
+        finally
         {
-            _message = $"Failed to add client: {output}";
-            _messageIsError = true;
+            _busy = false;
         }
 
         LoadProfiles();
@@ -234,6 +305,10 @@
 
         _busy = true;
         var (success, output) = await VpnAdmin.RevokeClientAsync(_revokeClientName);
+        if (success)
+        {
+            await Subs.MarkRevokedByProfileAsync(_revokeClientName);
+        }
         _busy = false;
         _showRevokeModal = false;
 

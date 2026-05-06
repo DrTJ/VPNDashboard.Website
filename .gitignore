@@ -30,3 +30,8 @@ appsettings.*.local.json
 ## Build output
 publish/
 out/
+
+## AdminWeb local dev artifacts
+src/VPNDashboard.AdminWeb/keys/
+src/VPNDashboard.AdminWeb/build-workspace/
+src/VPNDashboard.AdminWeb/artifacts/

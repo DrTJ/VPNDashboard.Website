@@ -1,0 +1,205 @@
+@page "/settings/build"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject IBuildSettingsStore SettingsStore
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Build Settings - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Build Settings</h3></div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_isError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="card">
+    <div class="card-header"><h3 class="card-title">Repository Configuration</h3></div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-8 mb-3">
+                <label class="form-label">Repository URL</label>
+                <input type="text" class="form-control" @bind="_repoUrl" placeholder="https://github.com/owner/repo.git" />
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Default Branch</label>
+                <input type="text" class="form-control" @bind="_defaultBranch" />
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Project Path (relative to repo root)</label>
+            <input type="text" class="form-control" @bind="_projectPath" />
+        </div>
+
+        <hr />
+        <h5>GitHub Authentication (optional — for private repositories)</h5>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">GitHub Username</label>
+                <input type="text" class="form-control" @bind="_gitHubUsername" placeholder="Leave blank if not needed" />
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">GitHub Token</label>
+                <input type="password" class="form-control" @bind="_gitHubToken" placeholder="Leave blank to keep current" />
+                @if (_hasExistingToken)
+                {
+                    <small class="text-muted">A token is currently stored. Leave blank to keep it.</small>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_testResult))
+        {
+            <div class="alert @(_testSuccess ? "alert-success" : "alert-danger") mt-2">@_testResult</div>
+        }
+
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-info" @onclick="TestAccess" disabled="@_busy">
+                @if (_testing) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                <i class="bi bi-plug me-1"></i> Test Access
+            </button>
+            <button class="btn btn-primary" @onclick="SaveSettings" disabled="@_busy">
+                @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                <i class="bi bi-check-lg me-1"></i> Save
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (_settings != null)
+{
+    <div class="card mt-3">
+        <div class="card-body text-muted">
+            <small>Last updated: @_settings.UpdatedAt.ToString("yyyy-MM-dd HH:mm") by @(_settings.UpdatedBy ?? "system")</small>
+        </div>
+    </div>
+}
+
+@code {
+    private BuildSettings? _settings;
+    private string _repoUrl = "";
+    private string _defaultBranch = "main";
+    private string _projectPath = "src/VPNDashboard.Website/VPNDashboard.Website.csproj";
+    private string? _gitHubUsername;
+    private string? _gitHubToken;
+    private bool _hasExistingToken;
+    private bool _busy;
+    private bool _testing;
+    private bool _saving;
+    private string? _message;
+    private bool _isError;
+    private string? _testResult;
+    private bool _testSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _settings = await SettingsStore.GetAsync();
+        _repoUrl = _settings.RepositoryUrl;
+        _defaultBranch = _settings.DefaultBranch;
+        _projectPath = _settings.ProjectPath;
+        _gitHubUsername = _settings.GitHubUsername;
+        _hasExistingToken = _settings.GitHubTokenEncrypted is { Length: > 0 };
+    }
+
+    private async Task SaveSettings()
+    {
+        _saving = true;
+        _busy = true;
+
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var email = authState.User.Identity?.Name ?? "unknown";
+
+            _settings!.RepositoryUrl = _repoUrl;
+            _settings.DefaultBranch = _defaultBranch;
+            _settings.ProjectPath = _projectPath;
+            _settings.GitHubUsername = _gitHubUsername;
+            _settings.UpdatedBy = email;
+
+            await SettingsStore.SaveAsync(_settings, string.IsNullOrEmpty(_gitHubToken) ? null : _gitHubToken);
+
+            _hasExistingToken = _settings.GitHubTokenEncrypted is { Length: > 0 };
+            _gitHubToken = null;
+            _message = "Settings saved.";
+            _isError = false;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _isError = true;
+        }
+        finally
+        {
+            _saving = false;
+            _busy = false;
+        }
+    }
+
+    private async Task TestAccess()
+    {
+        _testing = true;
+        _busy = true;
+        _testResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var url = _repoUrl;
+            var token = _gitHubToken;
+            if (string.IsNullOrEmpty(token) && _hasExistingToken)
+                token = SettingsStore.DecryptToken(_settings!);
+
+            if (!string.IsNullOrEmpty(token))
+            {
+                var uri = new Uri(url);
+                var user = string.IsNullOrEmpty(_gitHubUsername) ? "oauth2" : _gitHubUsername;
+                url = $"{uri.Scheme}://{user}:{token}@{uri.Host}{uri.PathAndQuery}";
+            }
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = $"ls-remote {url}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = System.Diagnostics.Process.Start(psi)!;
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode == 0)
+            {
+                _testResult = "Access verified — repository is reachable.";
+                _testSuccess = true;
+            }
+            else
+            {
+                var stderr = await process.StandardError.ReadToEndAsync();
+                _testResult = $"Failed: {stderr.Trim()}";
+                _testSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _testResult = $"Error: {ex.Message}";
+            _testSuccess = false;
+        }
+        finally
+        {
+            _testing = false;
+            _busy = false;
+        }
+    }
+}

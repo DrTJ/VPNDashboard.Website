@@ -1,0 +1,57 @@
+﻿@inject NavigationManager Navigation
+
+@{
+    var currentUrl = Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/');
+}
+
+<li class="nav-item">
+    <a href="/" class="nav-link @(currentUrl == "" ? "active" : "")">
+        <i class="nav-icon bi bi-speedometer2"></i>
+        <p>Dashboard</p>
+    </a>
+</li>
+
+<li class="nav-item">
+    <a href="/servers" class="nav-link @(currentUrl.StartsWith("servers") ? "active" : "")">
+        <i class="nav-icon bi bi-hdd-rack"></i>
+        <p>Servers</p>
+    </a>
+</li>
+
+<li class="nav-header">BUILD &amp; DEPLOY</li>
+<li class="nav-item">
+    <a href="/build" class="nav-link @(currentUrl == "build" ? "active" : "")">
+        <i class="nav-icon bi bi-hammer"></i>
+        <p>Build</p>
+    </a>
+</li>
+<li class="nav-item">
+    <a href="/artifacts" class="nav-link @(currentUrl == "artifacts" ? "active" : "")">
+        <i class="nav-icon bi bi-archive"></i>
+        <p>Artifacts</p>
+    </a>
+</li>
+
+<AuthorizeView Roles="Admin">
+    <li class="nav-header">ADMINISTRATION</li>
+    <li class="nav-item">
+        <a href="/account/users" class="nav-link @(currentUrl == "account/users" ? "active" : "")">
+            <i class="nav-icon bi bi-person-gear"></i>
+            <p>Users</p>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a href="/settings/build" class="nav-link @(currentUrl == "settings/build" ? "active" : "")">
+            <i class="nav-icon bi bi-gear"></i>
+            <p>Build Settings</p>
+        </a>
+    </li>
+</AuthorizeView>
+
+<li class="nav-header">HELP</li>
+<li class="nav-item">
+    <a href="/docs" class="nav-link @(currentUrl.StartsWith("docs") ? "active" : "")">
+        <i class="nav-icon bi bi-book"></i>
+        <p>Documentation</p>
+    </a>
+</li>

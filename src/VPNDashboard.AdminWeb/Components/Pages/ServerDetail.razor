@@ -1,0 +1,206 @@
+@page "/servers/{Id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject IServerStore ServerStore
+@inject IDeployService DeployService
+@inject IServerStatusService StatusService
+@inject NavigationManager Navigation
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+
+<PageTitle>Server Detail - Admin Panel</PageTitle>
+
+@if (_server == null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" role="status"></div>
+    </div>
+}
+else
+{
+    <div class="app-content-header">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-sm-6">
+                    <h3 class="mb-0">@_server.Name</h3>
+                    <small class="text-muted">@_server.Host:@_server.Port</small>
+                </div>
+                <div class="col-sm-6 text-end">
+                    <a href="/servers" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i> Back to Servers
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert @(_isError ? "alert-danger" : "alert-success") alert-dismissible">
+            <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+            @_message
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header"><h3 class="card-title">Server Info</h3></div>
+                <div class="card-body">
+                    <dl>
+                        <dt>Tier</dt>
+                        <dd>
+                            @if (_server.Tier == ServerTier.Paid)
+                            {
+                                <span class="badge text-bg-warning">Paid</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-success">Free</span>
+                            }
+                        </dd>
+                        <dt>Service</dt>
+                        <dd><code>@_server.ServiceName</code> (user: @_server.ServiceUser)</dd>
+                        <dt>Install Dir</dt>
+                        <dd><code>@_server.InstallDir</code></dd>
+                        <dt>Status</dt>
+                        <dd>
+                            @if (_status == "active") { <span class="badge text-bg-success">active</span> }
+                            else if (_status == "unreachable") { <span class="badge text-bg-warning">unreachable</span> }
+                            else { <span class="badge text-bg-secondary">@_status</span> }
+                        </dd>
+                        <dt>Last Deployed</dt>
+                        <dd>
+                            @if (_server.LastDeployedAt != null)
+                            {
+                                <span>@_server.LastDeployedAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                                <br /><small class="text-muted">@_server.LastDeployedArtifactName</small>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Never</span>
+                            }
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header"><h3 class="card-title">Deploy</h3></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select Artifact</label>
+                        <select class="form-select" @bind="_selectedArtifactId">
+                            <option value="0">-- Select an artifact --</option>
+                            @foreach (var a in _artifacts)
+                            {
+                                <option value="@a.Id">
+                                    @a.FileName — @a.CommitSha[..Math.Min(7, a.CommitSha.Length)] — @a.BuiltAt.ToString("yyyy-MM-dd HH:mm")
+                                </option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (_selectedArtifact != null)
+                    {
+                        <div class="alert alert-info">
+                            <strong>@_selectedArtifact.FileName</strong><br />
+                            Branch: @_selectedArtifact.Branch |
+                            Commit: <code>@_selectedArtifact.CommitSha[..Math.Min(7, _selectedArtifact.CommitSha.Length)]</code><br />
+                            @_selectedArtifact.CommitMessage<br />
+                            <small>By @_selectedArtifact.CommitAuthor on @_selectedArtifact.CommitDate.ToString("yyyy-MM-dd HH:mm") | Size: @(_selectedArtifact.SizeBytes / 1024) KB</small>
+                        </div>
+                    }
+
+                    <AuthorizeView Roles="Admin,Operator">
+                        <button class="btn btn-warning" @onclick="RunDeploy" disabled="@(_deploying || _selectedArtifactId == 0)">
+                            @if (_deploying) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            <i class="bi bi-cloud-upload me-1"></i> Deploy to @_server.Name
+                        </button>
+                    </AuthorizeView>
+
+                    @if (_logLines.Any())
+                    {
+                        <div class="mt-3">
+                            <label class="form-label">Deploy Output</label>
+                            <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto;">@string.Join("\n", _logLines)</pre>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private TargetServer? _server;
+    private string _status = "checking...";
+    private List<BuildArtifact> _artifacts = new();
+    private int _selectedArtifactId;
+    private BuildArtifact? _selectedArtifact => _artifacts.FirstOrDefault(a => a.Id == _selectedArtifactId);
+    private bool _deploying;
+    private List<string> _logLines = new();
+    private string? _message;
+    private bool _isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _server = await ServerStore.GetByIdAsync(Id);
+        if (_server == null)
+        {
+            Navigation.NavigateTo("/servers");
+            return;
+        }
+
+        _status = await StatusService.GetStatusAsync(_server);
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Data.AdminDbContext>();
+        _artifacts = await db.BuildArtifacts
+            .OrderByDescending(a => a.BuiltAt)
+            .ToListAsync();
+    }
+
+    private async Task RunDeploy()
+    {
+        if (_server == null || _selectedArtifact == null) return;
+
+        _deploying = true;
+        _logLines.Clear();
+        _message = null;
+        StateHasChanged();
+
+        var progress = new Progress<string>(line =>
+        {
+            InvokeAsync(() =>
+            {
+                _logLines.Add(line);
+                StateHasChanged();
+            });
+        });
+
+        try
+        {
+            await DeployService.DeployAsync(_server, _selectedArtifact, progress);
+            _message = "Deploy completed successfully.";
+            _isError = false;
+
+            StatusService.InvalidateCache(_server.Id);
+            _server = await ServerStore.GetByIdAsync(Id);
+            _status = _server != null ? await StatusService.GetStatusAsync(_server) : "unknown";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Deploy failed: {ex.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _deploying = false;
+        }
+    }
+}

@@ -1,0 +1,276 @@
+@page "/account/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject UserAdminService UserAdmin
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Users - Admin Panel</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Users</h3></div>
+            <div class="col-sm-6 text-end">
+                <button class="btn btn-primary" @onclick="ShowCreateDialog">
+                    <i class="bi bi-person-plus me-1"></i> New User
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="card">
+    <div class="card-header"><h3 class="card-title">All Users</h3></div>
+    <div class="card-body p-0">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in _users)
+                {
+                    <tr>
+                        <td>
+                            <i class="bi bi-person me-1"></i> @user.Email
+                            @if (user.Id == _currentUserId)
+                            {
+                                <span class="badge text-bg-secondary ms-1">you</span>
+                            }
+                        </td>
+                        <td>
+                            @switch (user.Role)
+                            {
+                                case "Admin":
+                                    <span class="badge text-bg-primary">Admin</span>
+                                    break;
+                                case "Operator":
+                                    <span class="badge text-bg-warning">Operator</span>
+                                    break;
+                                default:
+                                    <span class="badge text-bg-info">Viewer</span>
+                                    break;
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary me-1"
+                                    @onclick="() => ShowEditRoleDialog(user)" disabled="@_busy">
+                                <i class="bi bi-shield-lock"></i> Role
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1"
+                                    @onclick="() => ShowResetPasswordDialog(user)" disabled="@_busy">
+                                <i class="bi bi-key"></i> Reset
+                            </button>
+                            @if (user.Id != _currentUserId)
+                            {
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => ShowDeleteDialog(user)" disabled="@_busy">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (!_users.Any())
+                {
+                    <tr><td colspan="3" class="text-center text-muted py-4">No users found</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Create User Modal *@
+@if (_showCreateModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">New User</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showCreateModal = false"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" @bind="_createEmail" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" @bind="_createPassword" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" @bind="_createRole">
+                            <option value="Admin">Admin</option>
+                            <option value="Operator">Operator</option>
+                            <option value="Viewer">Viewer</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showCreateModal = false">Cancel</button>
+                    <button class="btn btn-primary" @onclick="CreateUser" disabled="@_busy">
+                        @if (_busy) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Edit Role Modal *@
+@if (_showEditRoleModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Change Role</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showEditRoleModal = false"></button></div>
+                <div class="modal-body">
+                    <p>Change role for <strong>@_targetUser?.Email</strong></p>
+                    <select class="form-select" @bind="_editRole">
+                        <option value="Admin">Admin</option>
+                        <option value="Operator">Operator</option>
+                        <option value="Viewer">Viewer</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showEditRoleModal = false">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SetRole" disabled="@_busy">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Reset Password Modal *@
+@if (_showResetPasswordModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning"><h5 class="modal-title">Reset Password</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showResetPasswordModal = false"></button></div>
+                <div class="modal-body">
+                    <p>New password for <strong>@_targetUser?.Email</strong></p>
+                    <input type="password" class="form-control" @bind="_resetPassword" />
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showResetPasswordModal = false">Cancel</button>
+                    <button class="btn btn-warning" @onclick="ResetPassword" disabled="@_busy">Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Delete Modal *@
+@if (_showDeleteModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white"><h5 class="modal-title">Delete User</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => _showDeleteModal = false"></button></div>
+                <div class="modal-body">
+                    <p>Delete <strong>@_targetUser?.Email</strong>? This cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showDeleteModal = false">Cancel</button>
+                    <button class="btn btn-danger" @onclick="DeleteUser" disabled="@_busy">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<UserListItem> _users = new();
+    private string? _currentUserId;
+    private string? _message;
+    private bool _messageIsError;
+    private bool _busy;
+
+    private bool _showCreateModal;
+    private string _createEmail = "", _createPassword = "", _createRole = "Viewer";
+
+    private bool _showEditRoleModal;
+    private UserListItem? _targetUser;
+    private string _editRole = "Viewer";
+
+    private bool _showResetPasswordModal;
+    private string _resetPassword = "";
+
+    private bool _showDeleteModal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers() => _users = await UserAdmin.ListAsync();
+
+    private void ShowCreateDialog() { _createEmail = _createPassword = ""; _createRole = "Viewer"; _showCreateModal = true; }
+
+    private async Task CreateUser()
+    {
+        if (string.IsNullOrWhiteSpace(_createEmail) || string.IsNullOrWhiteSpace(_createPassword)) return;
+        _busy = true;
+        var r = await UserAdmin.CreateAsync(_createEmail.Trim(), _createPassword, _createRole);
+        _busy = false; _showCreateModal = false;
+        _message = r.Succeeded ? $"User '{_createEmail.Trim()}' created." : string.Join(" ", r.Errors.Select(e => e.Description));
+        _messageIsError = !r.Succeeded;
+        await LoadUsers();
+    }
+
+    private void ShowEditRoleDialog(UserListItem u) { _targetUser = u; _editRole = u.Role; _showEditRoleModal = true; }
+
+    private async Task SetRole()
+    {
+        if (_targetUser == null) return;
+        _busy = true;
+        var r = await UserAdmin.SetRoleAsync(_targetUser.Id, _editRole);
+        _busy = false; _showEditRoleModal = false;
+        _message = r.Succeeded ? $"Role changed to {_editRole}." : string.Join(" ", r.Errors.Select(e => e.Description));
+        _messageIsError = !r.Succeeded;
+        await LoadUsers();
+    }
+
+    private void ShowResetPasswordDialog(UserListItem u) { _targetUser = u; _resetPassword = ""; _showResetPasswordModal = true; }
+
+    private async Task ResetPassword()
+    {
+        if (_targetUser == null || string.IsNullOrWhiteSpace(_resetPassword)) return;
+        _busy = true;
+        var r = await UserAdmin.ResetPasswordAsync(_targetUser.Id, _resetPassword);
+        _busy = false; _showResetPasswordModal = false;
+        _message = r.Succeeded ? "Password reset." : string.Join(" ", r.Errors.Select(e => e.Description));
+        _messageIsError = !r.Succeeded;
+    }
+
+    private void ShowDeleteDialog(UserListItem u) { _targetUser = u; _showDeleteModal = true; }
+
+    private async Task DeleteUser()
+    {
+        if (_targetUser == null || _currentUserId == null) return;
+        _busy = true;
+        var r = await UserAdmin.DeleteAsync(_targetUser.Id, _currentUserId);
+        _busy = false; _showDeleteModal = false;
+        _message = r.Succeeded ? $"User deleted." : string.Join(" ", r.Errors.Select(e => e.Description));
+        _messageIsError = !r.Succeeded;
+        await LoadUsers();
+    }
+}

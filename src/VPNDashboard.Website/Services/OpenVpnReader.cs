@@ -25,7 +25,30 @@ public class OpenVpnReader
         if (!File.Exists(indexPath))
             return profiles;
 
-        foreach (var line in File.ReadAllLines(indexPath))
+        string[] indexLines;
+        try
+        {
+            indexLines = File.ReadAllLines(indexPath);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            // PKI files are root-owned; if the service user lost read access
+            // (e.g. easy-rsa regenerated index.txt without inheriting the ACL),
+            // log a warning and degrade gracefully instead of returning a 500.
+            _logger.LogWarning(ex,
+                "Cannot read OpenVPN PKI index at {Path}. Reapply ACLs: " +
+                "sudo setfacl -R -m u:vpndash:rX /etc/openvpn/server/ && " +
+                "sudo setfacl -R -d -m u:vpndash:rX /etc/openvpn/server/",
+                indexPath);
+            return profiles;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Failed to read OpenVPN PKI index at {Path}", indexPath);
+            return profiles;
+        }
+
+        foreach (var line in indexLines)
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;
@@ -264,12 +287,20 @@ public class OpenVpnReader
         if (!File.Exists(clientCommonPath) || !File.Exists(inlinePath))
             return null;
 
-        var commonLines = File.ReadAllLines(clientCommonPath)
-            .Where(l => !l.TrimStart().StartsWith('#'));
-        var inlineLines = File.ReadAllLines(inlinePath)
-            .Where(l => !l.TrimStart().StartsWith('#'));
+        try
+        {
+            var commonLines = File.ReadAllLines(clientCommonPath)
+                .Where(l => !l.TrimStart().StartsWith('#'));
+            var inlineLines = File.ReadAllLines(inlinePath)
+                .Where(l => !l.TrimStart().StartsWith('#'));
 
-        return string.Join('\n', commonLines.Concat(inlineLines)) + '\n';
+            return string.Join('\n', commonLines.Concat(inlineLines)) + '\n';
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            _logger.LogWarning(ex, "Failed to build .ovpn file for client {Client}", clientName);
+            return null;
+        }
     }
 
     public async Task<string> GetJournalLogsAsync(int lines = 50)

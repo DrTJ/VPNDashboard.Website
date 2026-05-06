@@ -1,0 +1,24 @@
+/* AdminWeb site overrides */
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-box {
+    width: 360px;
+}
+
+.card-body dl dt {
+    margin-top: 0.5rem;
+}
+
+.card-body dl dd {
+    margin-bottom: 0;
+}
