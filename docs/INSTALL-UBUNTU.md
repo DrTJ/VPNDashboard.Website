@@ -42,25 +42,56 @@ sudo apt-get install -y aspnetcore-runtime-8.0
 sudo apt-get install -y nginx openssl acl
 ```
 
-## Step 4: Get the Dashboard
+## Step 4: Build the Application (on your development machine)
 
-Clone the repository:
+The server only needs the .NET **runtime** — building requires the .NET **SDK**, which should be on your development machine (not the server).
+
+On your **development machine** (Mac/Linux/Windows with .NET 8 SDK):
 
 ```bash
-git clone <repo-url> /tmp/vpn-dashboard
-cd /tmp/vpn-dashboard
+git clone <repo-url> vpn-dashboard
+cd vpn-dashboard
+dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish
 ```
 
-## Step 5: Run the Installer
+This creates a `publish/` folder with the compiled application.
+
+## Step 5: Copy to Server
+
+Create a tarball and copy it to the server:
 
 ```bash
+# On your development machine:
+tar czf /tmp/vpn-dashboard-release.tar.gz publish/ deploy/ docs/
+
+# Copy to server:
+scp /tmp/vpn-dashboard-release.tar.gz root@<server-ip>:/tmp/
+```
+
+Then on the **server**, extract it:
+
+```bash
+mkdir -p /tmp/vpn-dashboard
+cd /tmp/vpn-dashboard
+tar xzf /tmp/vpn-dashboard-release.tar.gz
+```
+
+> **Alternative:** If the repo is public, you can clone directly on the server instead:
+> `git clone <repo-url> /tmp/vpn-dashboard && cd /tmp/vpn-dashboard`
+> But you will still need to build on a machine with the .NET SDK and copy the `publish/` folder,
+> or install the SDK on the server (`sudo apt-get install -y dotnet-sdk-8.0`).
+
+## Step 6: Run the Installer
+
+```bash
+cd /tmp/vpn-dashboard
 sudo ./deploy/install-ubuntu.sh
 ```
 
 The installer will:
 
 1. Create a system user `vpndash` (no shell, no home directory)
-2. Publish the application to `/opt/vpn-dashboard/`
+2. Copy the pre-built application to `/opt/vpn-dashboard/`
 3. Create `/var/lib/vpn-dashboard/` for the SQLite identity database
 4. Install the privileged helper script at `/usr/local/sbin/vpn-dashboard-helper.sh`
 5. Configure sudoers for the `vpndash` user
@@ -71,13 +102,13 @@ The installer will:
 10. Enable the OpenVPN status log (if OpenVPN is already installed)
 11. Prompt for initial admin email and password
 
-## Step 6: First Login
+## Step 7: First Login
 
 Open `http://<server-ip>/` in your browser. You'll see the AdminLTE login page.
 
 Log in with the admin email and password you provided during installation.
 
-## Step 7: Install OpenVPN (if not already installed)
+## Step 8: Install OpenVPN (if not already installed)
 
 If OpenVPN is not yet installed, the dashboard will automatically redirect you to the **Setup Wizard** (`/setup`).
 
@@ -94,7 +125,7 @@ Click **Install OpenVPN** and watch the live installation log. This takes 1-2 mi
 
 When it finishes, you'll be redirected to the dashboard. The first `.ovpn` profile is available on the Clients page.
 
-## Step 8: Optional — Real TLS Certificate
+## Step 9: Optional — Real TLS Certificate
 
 Replace the self-signed certificate with Let's Encrypt:
 
@@ -103,7 +134,7 @@ sudo apt-get install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d vpn.example.com
 ```
 
-## Step 9: Verification Checklist
+## Step 10: Verification Checklist
 
 - [ ] `systemctl is-active vpn-dashboard` returns `active`
 - [ ] `systemctl is-active nginx` returns `active`
@@ -114,7 +145,7 @@ sudo certbot --nginx -d vpn.example.com
 - [ ] Can revoke a client
 - [ ] Connected page updates live when a VPN client connects
 
-## Step 10: Clean Up Seed Credentials
+## Step 11: Clean Up Seed Credentials
 
 After your first login, remove the one-shot admin credentials:
 
@@ -124,13 +155,122 @@ sudo systemctl daemon-reload
 sudo systemctl restart vpn-dashboard.service
 ```
 
+## Manual Post-Install Setup
+
+If the installer script did not fully configure everything (e.g. you deployed manually), you may need to perform these steps by hand.
+
+### Copy published files to the install directory
+
+If `/opt/vpn-dashboard/` is empty or missing `VPNDashboard.Website.dll`:
+
+```bash
+cp -r /tmp/vpn-dashboard/publish/* /opt/vpn-dashboard/
+chown -R vpndash:vpndash /opt/vpn-dashboard/
+systemctl restart vpn-dashboard
+```
+
+### Install the nginx reverse-proxy config
+
+```bash
+# Ubuntu uses sites-enabled
+cp /tmp/vpn-dashboard/deploy/nginx/vpn-dashboard.conf /etc/nginx/sites-enabled/vpn-dashboard.conf
+```
+
+### Disable the default nginx page
+
+Ubuntu's default nginx config includes a default server block. Remove it so the dashboard's `default_server` takes effect:
+
+```bash
+rm /etc/nginx/sites-enabled/default
+```
+
+### Generate the self-signed TLS certificate
+
+If nginx fails with `cannot load certificate "/etc/ssl/certs/vpn-dashboard.crt"`:
+
+```bash
+mkdir -p /etc/ssl/private /etc/ssl/certs
+
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/vpn-dashboard.key \
+  -out /etc/ssl/certs/vpn-dashboard.crt \
+  -subj "/CN=vpn-dashboard"
+```
+
+### Open firewall ports (if ufw is active)
+
+```bash
+sudo ufw allow 'Nginx Full'
+```
+
+### Test and restart nginx
+
+```bash
+sudo nginx -t && sudo systemctl restart nginx
+sudo systemctl enable nginx
+```
+
+### Verify everything is running
+
+```bash
+systemctl status vpn-dashboard   # should be active
+systemctl status nginx            # should be active
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/  # should return 200 or 302
+```
+
 ## Troubleshooting
 
-### Page won't load
+### Page won't load / ERR_CONNECTION_REFUSED
 
-1. Check if the service is running: `systemctl status vpn-dashboard`
+1. Check if the dashboard service is running: `systemctl status vpn-dashboard`
 2. Check nginx: `systemctl status nginx` and `sudo nginx -t`
 3. Check firewall: `sudo ufw status`
+4. If the service is `inactive (dead)`, start it: `sudo systemctl start vpn-dashboard`
+5. Check service logs: `sudo journalctl -u vpn-dashboard -n 50 --no-pager`
+
+### Service fails with "application does not exist"
+
+The published DLL is missing from `/opt/vpn-dashboard/`. This happens when the app was not built or copied correctly:
+
+```bash
+# Verify the DLL exists
+ls -la /opt/vpn-dashboard/VPNDashboard.Website.dll
+
+# If missing, copy from the publish directory
+cp -r /tmp/vpn-dashboard/publish/* /opt/vpn-dashboard/
+chown -R vpndash:vpndash /opt/vpn-dashboard/
+systemctl restart vpn-dashboard
+```
+
+### Default nginx page shows instead of the dashboard
+
+The default nginx server block is taking priority over the dashboard config:
+
+```bash
+# Remove the default site symlink
+rm /etc/nginx/sites-enabled/default
+
+# Verify our config is installed
+ls /etc/nginx/sites-enabled/vpn-dashboard.conf
+
+# Restart
+sudo nginx -t && sudo systemctl restart nginx
+```
+
+### nginx fails with "cannot load certificate"
+
+The self-signed TLS certificate was not generated:
+
+```bash
+mkdir -p /etc/ssl/private /etc/ssl/certs
+
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/vpn-dashboard.key \
+  -out /etc/ssl/certs/vpn-dashboard.crt \
+  -subj "/CN=vpn-dashboard"
+
+sudo nginx -t && sudo systemctl restart nginx
+```
 
 ### Port 80 already in use
 

@@ -52,25 +52,56 @@ sudo dnf install -y nginx policycoreutils-python-utils openssl
 > The `deploy/install.sh` script handles all of this automatically — it tries the dnf package
 > first, falls back to the Microsoft repo, and finally to `dotnet-install.sh` if needed.
 
-## Step 3: Get the Dashboard
+## Step 3: Build the Application (on your development machine)
 
-Clone the repository:
+The server only needs the .NET **runtime** — building requires the .NET **SDK**, which should be on your development machine (not the server).
+
+On your **development machine** (Mac/Linux/Windows with .NET 8 SDK):
 
 ```bash
-git clone <repo-url> /tmp/vpn-dashboard
-cd /tmp/vpn-dashboard
+git clone <repo-url> vpn-dashboard
+cd vpn-dashboard
+dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish
 ```
 
-## Step 4: Run the Installer
+This creates a `publish/` folder with the compiled application.
+
+## Step 4: Copy to Server
+
+Create a tarball and copy it to the server:
 
 ```bash
+# On your development machine:
+tar czf /tmp/vpn-dashboard-release.tar.gz publish/ deploy/ docs/
+
+# Copy to server:
+scp /tmp/vpn-dashboard-release.tar.gz root@<server-ip>:/tmp/
+```
+
+Then on the **server**, extract it:
+
+```bash
+mkdir -p /tmp/vpn-dashboard
+cd /tmp/vpn-dashboard
+tar xzf /tmp/vpn-dashboard-release.tar.gz
+```
+
+> **Alternative:** If the repo is public, you can clone directly on the server instead:
+> `git clone <repo-url> /tmp/vpn-dashboard && cd /tmp/vpn-dashboard`
+> But you will still need to build on a machine with the .NET SDK and copy the `publish/` folder,
+> or install the SDK on the server (`sudo dnf install -y dotnet-sdk-8.0`).
+
+## Step 5: Run the Installer
+
+```bash
+cd /tmp/vpn-dashboard
 sudo ./deploy/install.sh
 ```
 
 The installer will:
 
 1. Create a system user `vpndash` (no shell, no home directory)
-2. Publish the application to `/opt/vpn-dashboard/`
+2. Copy the pre-built application to `/opt/vpn-dashboard/`
 3. Create `/var/lib/vpn-dashboard/` for the SQLite identity database
 4. Install the privileged helper script at `/usr/local/sbin/vpn-dashboard-helper.sh`
 5. Configure sudoers for the `vpndash` user
@@ -82,30 +113,32 @@ The installer will:
 11. Enable the OpenVPN status log (if OpenVPN is already installed)
 12. Prompt for initial admin email and password
 
-## Step 5: First Login
+## Step 6: First Login
 
 Open `http://<server-ip>/` in your browser. You'll see the AdminLTE login page.
 
 Log in with the admin email and password you provided during installation.
 
-## Step 6: Install OpenVPN (if not already installed)
+## Step 7: Install OpenVPN (if not already installed)
 
 If OpenVPN is not yet installed, the dashboard will automatically redirect you to the **Setup Wizard** (`/setup`).
 
 The wizard will ask for:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Protocol | UDP | UDP is recommended for performance |
-| Port | 1194 | Standard OpenVPN port |
-| DNS | System resolvers | DNS servers pushed to VPN clients |
-| First client | client | Name for the first VPN profile |
+
+| Setting      | Default          | Description                        |
+| ------------ | ---------------- | ---------------------------------- |
+| Protocol     | UDP              | UDP is recommended for performance |
+| Port         | 1194             | Standard OpenVPN port              |
+| DNS          | System resolvers | DNS servers pushed to VPN clients  |
+| First client | client           | Name for the first VPN profile     |
+
 
 Click **Install OpenVPN** and watch the live installation log. This takes 1-2 minutes.
 
 When it finishes, you'll be redirected to the dashboard. The first `.ovpn` profile is available on the Clients page.
 
-## Step 7: Optional — Real TLS Certificate
+## Step 8: Optional — Real TLS Certificate
 
 Replace the self-signed certificate with Let's Encrypt:
 
@@ -114,18 +147,18 @@ sudo dnf install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d vpn.example.com
 ```
 
-## Step 8: Verification Checklist
+## Step 9: Verification Checklist
 
-- [ ] `systemctl is-active vpn-dashboard` returns `active`
-- [ ] `systemctl is-active nginx` returns `active`
-- [ ] `http://<server-ip>/` loads the login page
-- [ ] Can log in with admin credentials
-- [ ] Clients page shows profiles
-- [ ] Can add a new client and download the `.ovpn` file
-- [ ] Can revoke a client
-- [ ] Connected page updates live when a VPN client connects
+- `systemctl is-active vpn-dashboard` returns `active`
+- `systemctl is-active nginx` returns `active`
+- `http://<server-ip>/` loads the login page
+- Can log in with admin credentials
+- Clients page shows profiles
+- Can add a new client and download the `.ovpn` file
+- Can revoke a client
+- Connected page updates live when a VPN client connects
 
-## Step 9: Clean Up Seed Credentials
+## Step 10: Clean Up Seed Credentials
 
 After your first login, remove the one-shot admin credentials:
 
@@ -135,13 +168,137 @@ sudo systemctl daemon-reload
 sudo systemctl restart vpn-dashboard.service
 ```
 
+## Manual Post-Install Setup
+
+If the installer script did not fully configure everything (e.g. you deployed manually), you may need to perform these steps by hand.
+
+### Copy published files to the install directory
+
+If `/opt/vpn-dashboard/` is empty or missing `VPNDashboard.Website.dll`:
+
+```bash
+cp -r /tmp/vpn-dashboard/publish/* /opt/vpn-dashboard/
+chown -R vpndash:vpndash /opt/vpn-dashboard/
+systemctl restart vpn-dashboard
+```
+
+### Install the nginx reverse-proxy config
+
+```bash
+cp /tmp/vpn-dashboard/deploy/nginx/vpn-dashboard.conf /etc/nginx/conf.d/vpn-dashboard.conf
+```
+
+### Disable the default Fedora test page
+
+Fedora's default nginx config includes a built-in server block that shows a "Fedora Webserver Test Page". You must remove or disable it so the dashboard's `default_server` takes effect:
+
+```bash
+# Remove the default config if it exists
+mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak 2>/dev/null
+
+# Comment out the default server block in nginx.conf
+# (Fedora ships a server{} block inside /etc/nginx/nginx.conf itself)
+sudo sed -i '/^    server {/,/^    }/s/^/#/' /etc/nginx/nginx.conf
+```
+
+### Generate the self-signed TLS certificate
+
+If nginx fails with `cannot load certificate "/etc/ssl/certs/vpn-dashboard.crt"`:
+
+```bash
+mkdir -p /etc/ssl/private /etc/ssl/certs
+
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/vpn-dashboard.key \
+  -out /etc/ssl/certs/vpn-dashboard.crt \
+  -subj "/CN=vpn-dashboard"
+```
+
+### Set SELinux boolean
+
+```bash
+sudo setsebool -P httpd_can_network_connect on
+```
+
+### Open firewall ports
+
+```bash
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+```
+
+### Test and restart nginx
+
+```bash
+nginx -t && systemctl restart nginx
+systemctl enable nginx
+```
+
+### Verify everything is running
+
+```bash
+systemctl status vpn-dashboard   # should be active
+systemctl status nginx            # should be active
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/  # should return 200 or 302
+```
+
 ## Troubleshooting
 
-### Page won't load
+### Page won't load / ERR_CONNECTION_REFUSED
 
-1. Check if the service is running: `systemctl status vpn-dashboard`
+1. Check if the dashboard service is running: `systemctl status vpn-dashboard`
 2. Check nginx: `systemctl status nginx` and `nginx -t`
 3. Check firewall: `firewall-cmd --list-all`
+4. If the service is `inactive (dead)`, start it: `sudo systemctl start vpn-dashboard`
+5. Check service logs: `sudo journalctl -u vpn-dashboard -n 50 --no-pager`
+
+### Service fails with "application does not exist"
+
+The published DLL is missing from `/opt/vpn-dashboard/`. This happens when the app was not built or copied correctly:
+
+```bash
+# Verify the DLL exists
+ls -la /opt/vpn-dashboard/VPNDashboard.Website.dll
+
+# If missing, copy from the publish directory
+cp -r /tmp/vpn-dashboard/publish/* /opt/vpn-dashboard/
+chown -R vpndash:vpndash /opt/vpn-dashboard/
+systemctl restart vpn-dashboard
+```
+
+### Fedora test page shows instead of the dashboard
+
+The default nginx server block is taking priority over the dashboard config:
+
+```bash
+# Remove the default config
+mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak 2>/dev/null
+
+# Comment out the server{} block in nginx.conf
+sudo sed -i '/^    server {/,/^    }/s/^/#/' /etc/nginx/nginx.conf
+
+# Verify our config is installed
+ls /etc/nginx/conf.d/vpn-dashboard.conf
+
+# Restart
+nginx -t && systemctl restart nginx
+```
+
+### nginx fails with "cannot load certificate"
+
+The self-signed TLS certificate was not generated:
+
+```bash
+mkdir -p /etc/ssl/private /etc/ssl/certs
+
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/vpn-dashboard.key \
+  -out /etc/ssl/certs/vpn-dashboard.crt \
+  -subj "/CN=vpn-dashboard"
+
+nginx -t && systemctl restart nginx
+```
 
 ### SELinux denials
 
@@ -169,3 +326,4 @@ Check the dashboard logs:
 ```bash
 journalctl -u vpn-dashboard -f
 ```
+
