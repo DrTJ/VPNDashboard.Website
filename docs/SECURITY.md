@@ -56,6 +56,27 @@ The `openvpn-install.sh` script is vendored (pinned copy) at `/opt/vpn-dashboard
 - Session cookies with 7-day sliding expiration
 - The initial admin password should be changed immediately after first login
 
+### Password Policy
+
+| Requirement | Value |
+|-------------|-------|
+| Minimum length | 8 characters |
+| Require digit | Yes (`0`-`9`) |
+| Require lowercase | Yes (`a`-`z`) |
+| Require uppercase | No |
+| Require special character | No |
+
+### Seed Credentials
+
+The initial admin is created via environment variables (`VPNDASH_ADMIN_EMAIL`, `VPNDASH_ADMIN_PASSWORD`) set in a systemd drop-in file. These are stored in plaintext at `/etc/systemd/system/vpn-dashboard.service.d/seed-admin.conf`.
+
+**Remove this file immediately after your first login:**
+
+```bash
+sudo rm /etc/systemd/system/vpn-dashboard.service.d/seed-admin.conf
+sudo systemctl daemon-reload
+```
+
 ## Recommendations
 
 1. Replace the self-signed TLS certificate with Let's Encrypt

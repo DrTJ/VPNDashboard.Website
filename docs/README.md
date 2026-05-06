@@ -6,17 +6,28 @@ A web-based management dashboard for OpenVPN servers, built with ASP.NET Core 8 
 
 - **Install/Uninstall OpenVPN** directly from the web UI (uses Nyr's openvpn-install script)
 - **Manage client profiles** — add, revoke, and download `.ovpn` configuration files
-- **Live connected clients** — real-time view of who's connected via SignalR
+- **Live connected clients** — real-time view of who's connected (auto-refreshes every 5 seconds)
 - **Server management** — view configuration, reload service, read journal logs
 - **Secure** — ASP.NET Core Identity with SQLite, unprivileged service user, sudoers-whitelisted helper script
 - **AdminLTE 4 UI** — polished admin interface with Bootstrap 5
 
 ## Quick Start
 
+**On your development machine** (requires .NET 8 SDK):
+
 ```bash
-# Get the code
-git clone <repo-url> /tmp/vpn-dashboard
-cd /tmp/vpn-dashboard
+git clone <repo-url> vpn-dashboard
+cd vpn-dashboard
+dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish
+tar czf /tmp/vpn-dashboard-release.tar.gz publish/ deploy/ docs/
+scp /tmp/vpn-dashboard-release.tar.gz root@<server-ip>:/tmp/
+```
+
+**On the server:**
+
+```bash
+mkdir -p /tmp/vpn-dashboard && cd /tmp/vpn-dashboard
+tar xzf /tmp/vpn-dashboard-release.tar.gz
 
 # Fedora:
 sudo ./deploy/install.sh
@@ -26,6 +37,8 @@ sudo ./deploy/install-ubuntu.sh
 ```
 
 Then open `http://<server-ip>/` in your browser.
+
+> **Note:** The server only needs the .NET 8 **runtime**, not the SDK. Building must be done on a development machine. See the full installation guides for details.
 
 ## Documentation
 

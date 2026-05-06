@@ -168,6 +168,35 @@ sudo systemctl daemon-reload
 sudo systemctl restart vpn-dashboard.service
 ```
 
+## Deploying Updates
+
+When you make changes to the dashboard code, rebuild and redeploy:
+
+**On your development machine:**
+
+```bash
+cd vpn-dashboard
+
+# Rebuild
+dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish
+
+# Create tarball
+tar czf /tmp/vpn-dashboard-release.tar.gz publish/ deploy/ docs/
+
+# Copy to server
+scp /tmp/vpn-dashboard-release.tar.gz root@<server-ip>:/tmp/
+```
+
+**On the server:**
+
+```bash
+cd /tmp/vpn-dashboard
+tar xzf /tmp/vpn-dashboard-release.tar.gz
+cp -rf publish/* /opt/vpn-dashboard/
+chown -R vpndash:vpndash /opt/vpn-dashboard/
+systemctl restart vpn-dashboard
+```
+
 ## Manual Post-Install Setup
 
 If the installer script did not fully configure everything (e.g. you deployed manually), you may need to perform these steps by hand.
@@ -307,11 +336,37 @@ sudo ausearch -m avc -ts recent
 sudo setsebool -P httpd_can_network_connect on
 ```
 
-### OpenVPN status log not present
+### Connected clients not showing / OpenVPN status log not present
+
+The Connected page relies on the OpenVPN status log. If no connected clients appear, the status log is likely missing or unreadable.
+
+**Quick fix** — use the helper script:
 
 ```bash
 sudo /usr/local/sbin/vpn-dashboard-helper.sh enable-status
 ```
+
+**Manual fix** — if the helper script isn't available:
+
+```bash
+# Create the log directory
+mkdir -p /var/log/openvpn
+
+# Add the status directive to OpenVPN's config
+echo "status /var/log/openvpn/openvpn-status.log 10" >> /etc/openvpn/server/server.conf
+
+# Restart OpenVPN to start writing the log
+systemctl restart openvpn-server@server
+
+# Verify the log was created
+ls -la /var/log/openvpn/openvpn-status.log
+
+# Grant the vpndash user read access
+setfacl -m u:vpndash:r /var/log/openvpn/openvpn-status.log
+setfacl -m u:vpndash:rx /var/log/openvpn
+```
+
+The `10` in the status directive means OpenVPN updates the log every 10 seconds. The Connected page polls this file via SignalR every 5 seconds.
 
 ### Sudoers syntax error
 

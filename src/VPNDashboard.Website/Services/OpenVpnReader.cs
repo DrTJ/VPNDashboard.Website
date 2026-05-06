@@ -81,67 +81,14 @@ public class OpenVpnReader
         try
         {
             var lines = File.ReadAllLines(_settings.StatusLogPath);
-            var inClientList = false;
 
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("Common Name,"))
-                {
-                    inClientList = true;
-                    continue;
-                }
+            // Detect status version: v2 has CLIENT_LIST prefixed lines, v1 does not
+            var isV2 = lines.Any(l => l.StartsWith("CLIENT_LIST,"));
 
-                if (line.StartsWith("ROUTING TABLE"))
-                {
-                    inClientList = false;
-                    continue;
-                }
-
-                if (!inClientList || string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                var parts = line.Split(',');
-                if (parts.Length < 5)
-                    continue;
-
-                clients.Add(new ConnectedClient
-                {
-                    CommonName = parts[0],
-                    RealAddress = parts[1],
-                    BytesReceived = long.TryParse(parts[2], out var br) ? br : 0,
-                    BytesSent = long.TryParse(parts[3], out var bs) ? bs : 0,
-                    ConnectedSince = DateTime.TryParse(parts[4], CultureInfo.InvariantCulture,
-                        DateTimeStyles.AssumeUniversal, out var cs) ? cs : DateTime.UtcNow
-                });
-            }
-
-            // Parse routing table for virtual addresses
-            var inRoutingTable = false;
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("ROUTING TABLE"))
-                {
-                    inRoutingTable = true;
-                    continue;
-                }
-
-                if (line.StartsWith("Virtual Address,"))
-                    continue;
-
-                if (line.StartsWith("GLOBAL STATS"))
-                    break;
-
-                if (!inRoutingTable || string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                var parts = line.Split(',');
-                if (parts.Length < 3)
-                    continue;
-
-                var client = clients.FirstOrDefault(c => c.CommonName == parts[1]);
-                if (client != null && !parts[0].Contains(':'))
-                    client.VirtualAddress = parts[0];
-            }
+            if (isV2)
+                ParseStatusV2(lines, clients);
+            else
+                ParseStatusV1(lines, clients);
         }
         catch (Exception ex)
         {
@@ -149,6 +96,103 @@ public class OpenVpnReader
         }
 
         return clients;
+    }
+
+    private void ParseStatusV2(string[] lines, List<ConnectedClient> clients)
+    {
+        // Status v2 format:
+        // CLIENT_LIST,CommonName,RealAddress,VirtualAddress,VirtualIPv6,BytesRecv,BytesSent,ConnectedSince,...
+        // ROUTING_TABLE,VirtualAddress,CommonName,RealAddress,LastRef,...
+        foreach (var line in lines)
+        {
+            if (!line.StartsWith("CLIENT_LIST,"))
+                continue;
+
+            var parts = line.Split(',');
+            if (parts.Length < 8)
+                continue;
+
+            var client = new ConnectedClient
+            {
+                CommonName = parts[1],
+                RealAddress = parts[2],
+                VirtualAddress = parts[3],
+                BytesReceived = long.TryParse(parts[5], out var br) ? br : 0,
+                BytesSent = long.TryParse(parts[6], out var bs) ? bs : 0,
+                ConnectedSince = DateTime.TryParse(parts[7], CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal, out var cs) ? cs : DateTime.UtcNow
+            };
+
+            clients.Add(client);
+        }
+    }
+
+    private void ParseStatusV1(string[] lines, List<ConnectedClient> clients)
+    {
+        // Status v1 format:
+        // Common Name,Real Address,Bytes Received,Bytes Sent,Connected Since
+        // clientname,1.2.3.4:port,1234,5678,2024-01-01 00:00:00
+        var inClientList = false;
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("Common Name,"))
+            {
+                inClientList = true;
+                continue;
+            }
+
+            if (line.StartsWith("ROUTING TABLE"))
+            {
+                inClientList = false;
+                continue;
+            }
+
+            if (!inClientList || string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var parts = line.Split(',');
+            if (parts.Length < 5)
+                continue;
+
+            clients.Add(new ConnectedClient
+            {
+                CommonName = parts[0],
+                RealAddress = parts[1],
+                BytesReceived = long.TryParse(parts[2], out var br) ? br : 0,
+                BytesSent = long.TryParse(parts[3], out var bs) ? bs : 0,
+                ConnectedSince = DateTime.TryParse(parts[4], CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal, out var cs) ? cs : DateTime.UtcNow
+            });
+        }
+
+        // Parse routing table for virtual addresses
+        var inRoutingTable = false;
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("ROUTING TABLE"))
+            {
+                inRoutingTable = true;
+                continue;
+            }
+
+            if (line.StartsWith("Virtual Address,"))
+                continue;
+
+            if (line.StartsWith("GLOBAL STATS"))
+                break;
+
+            if (!inRoutingTable || string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var parts = line.Split(',');
+            if (parts.Length < 3)
+                continue;
+
+            var client = clients.FirstOrDefault(c => c.CommonName == parts[1]);
+            if (client != null && !parts[0].Contains(':'))
+                client.VirtualAddress = parts[0];
+        }
     }
 
     public ServerStatus GetServerStatus()
