@@ -119,6 +119,19 @@ Open `http://<server-ip>/` in your browser. You'll see the AdminLTE login page.
 
 Log in with the admin email and password you provided during installation.
 
+## User Roles
+
+The dashboard has two roles:
+
+| Role | Permissions |
+|------|-------------|
+| **Admin** | Full access: manage VPN clients (add/revoke), server operations (reload/uninstall), install OpenVPN via Setup Wizard, and manage dashboard users |
+| **Viewer** | Read-only: view client profiles, connected clients, server status, and download `.ovpn` files |
+
+The initial user created during installation is an **Admin**. To add more users or change roles, go to **Administration > Users** (`/account/users`) in the sidebar (visible to Admins only).
+
+All users can change their own password at **Settings** (`/account/manage`) from the top-right profile menu.
+
 ## Step 7: Install OpenVPN (if not already installed)
 
 If OpenVPN is not yet installed, the dashboard will automatically redirect you to the **Setup Wizard** (`/setup`).

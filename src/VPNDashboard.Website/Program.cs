@@ -39,10 +39,16 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.SlidingExpiration = true;
 });
 
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
+});
+
 // Services
 builder.Services.AddScoped<OpenVpnReader>();
 builder.Services.AddScoped<OpenVpnAdmin>();
 builder.Services.AddScoped<OpenVpnInstaller>();
+builder.Services.AddScoped<UserAdminService>();
 builder.Services.AddHostedService<ConnectedClientsBackgroundService>();
 
 // SignalR
@@ -67,6 +73,8 @@ using (var scope = app.Services.CreateScope())
 
     if (!await roleManager.RoleExistsAsync("Admin"))
         await roleManager.CreateAsync(new IdentityRole("Admin"));
+    if (!await roleManager.RoleExistsAsync("Viewer"))
+        await roleManager.CreateAsync(new IdentityRole("Viewer"));
 
     var adminEmail = Environment.GetEnvironmentVariable("VPNDASH_ADMIN_EMAIL");
     var adminPassword = Environment.GetEnvironmentVariable("VPNDASH_ADMIN_PASSWORD");

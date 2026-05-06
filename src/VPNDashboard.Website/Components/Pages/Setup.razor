@@ -1,10 +1,11 @@
 @page "/setup"
-@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 @inject OpenVpnReader VpnReader
 @inject OpenVpnInstaller VpnInstaller
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
 @using Microsoft.AspNetCore.SignalR.Client
 
 <PageTitle>Setup OpenVPN - VPN Dashboard</PageTitle>
@@ -176,6 +177,8 @@ else
 
     private async Task StartInstall()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (!authState.User.IsInRole("Admin")) return;
         _installing = true;
         _installLogs.Clear();
 

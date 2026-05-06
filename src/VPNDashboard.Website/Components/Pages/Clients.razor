@@ -4,6 +4,7 @@
 @inject OpenVpnReader VpnReader
 @inject OpenVpnAdmin VpnAdmin
 @inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Client Profiles - VPN Dashboard</PageTitle>
 
@@ -12,9 +13,11 @@
         <div class="row">
             <div class="col-sm-6"><h3 class="mb-0">Client Profiles</h3></div>
             <div class="col-sm-6 text-end">
-                <button class="btn btn-primary" @onclick="ShowAddDialog">
-                    <i class="bi bi-plus-circle me-1"></i> Add Client
-                </button>
+                <AuthorizeView Roles="Admin">
+                    <button class="btn btn-primary" @onclick="ShowAddDialog">
+                        <i class="bi bi-plus-circle me-1"></i> Add Client
+                    </button>
+                </AuthorizeView>
             </div>
         </div>
     </div>
@@ -80,9 +83,11 @@
                                 <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => DownloadOvpn(profile.Name)" disabled="@_busy">
                                     <i class="bi bi-download"></i> .ovpn
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmRevoke(profile.Name)" disabled="@_busy">
-                                    <i class="bi bi-x-circle"></i> Revoke
-                                </button>
+                                <AuthorizeView Roles="Admin">
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmRevoke(profile.Name)" disabled="@_busy">
+                                        <i class="bi bi-x-circle"></i> Revoke
+                                    </button>
+                                </AuthorizeView>
                             }
                         </td>
                     </tr>
@@ -186,9 +191,15 @@
         _showAddModal = true;
     }
 
+    private async Task<bool> IsAdminAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        return authState.User.IsInRole("Admin");
+    }
+
     private async Task AddClient()
     {
-        if (string.IsNullOrWhiteSpace(_newClientName))
+        if (string.IsNullOrWhiteSpace(_newClientName) || !await IsAdminAsync())
             return;
 
         _busy = true;
@@ -218,7 +229,7 @@
 
     private async Task RevokeClient()
     {
-        if (string.IsNullOrEmpty(_revokeClientName))
+        if (string.IsNullOrEmpty(_revokeClientName) || !await IsAdminAsync())
             return;
 
         _busy = true;

@@ -1,0 +1,140 @@
+@page "/account/manage"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<IdentityUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>My Account - VPN Dashboard</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">My Account</h3></div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="bi bi-person-circle me-2"></i>Account Details</h3>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label fw-bold">Email</label>
+            <p class="form-control-plaintext">@_email</p>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-bold">Role</label>
+            <p class="form-control-plaintext">
+                @if (_role == "Admin")
+                {
+                    <span class="badge text-bg-primary">Admin</span>
+                }
+                else
+                {
+                    <span class="badge text-bg-info">@_role</span>
+                }
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="bi bi-key me-2"></i>Change Password</h3>
+    </div>
+    <div class="card-body">
+        <div class="mb-3" style="max-width: 400px">
+            <label class="form-label">Current Password</label>
+            <input type="password" class="form-control" @bind="_currentPassword" />
+        </div>
+        <div class="mb-3" style="max-width: 400px">
+            <label class="form-label">New Password</label>
+            <input type="password" class="form-control" @bind="_newPassword" />
+        </div>
+        <div class="mb-3" style="max-width: 400px">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" class="form-control" @bind="_confirmPassword" />
+        </div>
+        <button class="btn btn-primary" @onclick="ChangePassword" disabled="@_busy">
+            @if (_busy) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            Change Password
+        </button>
+    </div>
+</div>
+
+@code {
+    private string _email = string.Empty;
+    private string _role = string.Empty;
+    private string _currentPassword = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private string? _message;
+    private bool _messageIsError;
+    private bool _busy;
+    private IdentityUser? _user;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId != null)
+        {
+            _user = await UserManager.FindByIdAsync(userId);
+            if (_user != null)
+            {
+                _email = _user.Email ?? "";
+                var roles = await UserManager.GetRolesAsync(_user);
+                _role = roles.FirstOrDefault() ?? "Viewer";
+            }
+        }
+    }
+
+    private async Task ChangePassword()
+    {
+        if (string.IsNullOrWhiteSpace(_currentPassword) ||
+            string.IsNullOrWhiteSpace(_newPassword) ||
+            string.IsNullOrWhiteSpace(_confirmPassword))
+        {
+            _message = "All fields are required.";
+            _messageIsError = true;
+            return;
+        }
+
+        if (_newPassword != _confirmPassword)
+        {
+            _message = "New password and confirmation do not match.";
+            _messageIsError = true;
+            return;
+        }
+
+        if (_user == null) return;
+
+        _busy = true;
+        var result = await UserManager.ChangePasswordAsync(_user, _currentPassword, _newPassword);
+        _busy = false;
+
+        if (result.Succeeded)
+        {
+            _message = "Password changed successfully.";
+            _messageIsError = false;
+            _currentPassword = string.Empty;
+            _newPassword = string.Empty;
+            _confirmPassword = string.Empty;
+        }
+        else
+        {
+            _message = string.Join(" ", result.Errors.Select(e => e.Description));
+            _messageIsError = true;
+        }
+    }
+}

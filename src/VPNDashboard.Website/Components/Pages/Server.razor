@@ -6,6 +6,7 @@
 @inject OpenVpnAdmin VpnAdmin
 @inject OpenVpnInstaller VpnInstaller
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
 @using Microsoft.AspNetCore.SignalR.Client
 
 <PageTitle>Server - VPN Dashboard</PageTitle>
@@ -35,9 +36,11 @@
     <div class="card-header">
         <h3 class="card-title"><i class="bi bi-hdd-rack me-2"></i>Server Configuration</h3>
         <div class="card-tools">
-            <button class="btn btn-sm btn-outline-primary" @onclick="ReloadServer" disabled="@_busy">
-                <i class="bi bi-arrow-clockwise me-1"></i> Reload
-            </button>
+            <AuthorizeView Roles="Admin">
+                <button class="btn btn-sm btn-outline-primary" @onclick="ReloadServer" disabled="@_busy">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Reload
+                </button>
+            </AuthorizeView>
         </div>
     </div>
     <div class="card-body">
@@ -85,57 +88,59 @@
     </div>
 </div>
 
-<!-- Danger Zone -->
-<div class="card card-danger card-outline">
-    <div class="card-header">
-        <h3 class="card-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</h3>
-    </div>
-    <div class="card-body">
-        @if (!_showUninstallLog)
-        {
-            <p>Completely remove OpenVPN from this server. This will:</p>
-            <ul>
-                <li>Stop the OpenVPN service</li>
-                <li>Remove all firewall rules</li>
-                <li>Delete all certificates and keys</li>
-                <li>Uninstall the OpenVPN package</li>
-            </ul>
-            <p class="text-danger fw-bold">This action is irreversible. All connected clients will be disconnected immediately.</p>
-
-            @if (!_showConfirmInput)
+<AuthorizeView Roles="Admin">
+    <!-- Danger Zone -->
+    <div class="card card-danger card-outline">
+        <div class="card-header">
+            <h3 class="card-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</h3>
+        </div>
+        <div class="card-body">
+            @if (!_showUninstallLog)
             {
-                <button class="btn btn-outline-danger" @onclick="() => _showConfirmInput = true">
-                    <i class="bi bi-trash me-1"></i> Uninstall OpenVPN
-                </button>
+                <p>Completely remove OpenVPN from this server. This will:</p>
+                <ul>
+                    <li>Stop the OpenVPN service</li>
+                    <li>Remove all firewall rules</li>
+                    <li>Delete all certificates and keys</li>
+                    <li>Uninstall the OpenVPN package</li>
+                </ul>
+                <p class="text-danger fw-bold">This action is irreversible. All connected clients will be disconnected immediately.</p>
+
+                @if (!_showConfirmInput)
+                {
+                    <button class="btn btn-outline-danger" @onclick="() => _showConfirmInput = true">
+                        <i class="bi bi-trash me-1"></i> Uninstall OpenVPN
+                    </button>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Type <strong>UNINSTALL</strong> to confirm:</label>
+                        <input type="text" class="form-control" @bind="_confirmText" placeholder="UNINSTALL" style="max-width: 300px" />
+                    </div>
+                    <button class="btn btn-danger me-2" @onclick="UninstallOpenVpn"
+                            disabled="@(_confirmText != "UNINSTALL" || _busy)">
+                        @if (_busy)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Confirm Uninstall
+                    </button>
+                    <button class="btn btn-secondary" @onclick="() => { _showConfirmInput = false; _confirmText = string.Empty; }"
+                            disabled="@_busy">
+                        Cancel
+                    </button>
+                }
             }
             else
             {
-                <div class="mb-3">
-                    <label class="form-label">Type <strong>UNINSTALL</strong> to confirm:</label>
-                    <input type="text" class="form-control" @bind="_confirmText" placeholder="UNINSTALL" style="max-width: 300px" />
-                </div>
-                <button class="btn btn-danger me-2" @onclick="UninstallOpenVpn"
-                        disabled="@(_confirmText != "UNINSTALL" || _busy)">
-                    @if (_busy)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1"></span>
-                    }
-                    Confirm Uninstall
-                </button>
-                <button class="btn btn-secondary" @onclick="() => { _showConfirmInput = false; _confirmText = string.Empty; }"
-                        disabled="@_busy">
-                    Cancel
-                </button>
+                <h5>Uninstall Progress</h5>
+                <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;"
+                     @ref="_logElement">@string.Join('\n', _uninstallLogs)</pre>
             }
-        }
-        else
-        {
-            <h5>Uninstall Progress</h5>
-            <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;"
-                 @ref="_logElement">@string.Join('\n', _uninstallLogs)</pre>
-        }
+        </div>
     </div>
-</div>
+</AuthorizeView>
 
 @code {
     private string? _message;
@@ -191,8 +196,15 @@
         _journalLogs = await VpnReader.GetJournalLogsAsync();
     }
 
+    private async Task<bool> IsAdminAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        return authState.User.IsInRole("Admin");
+    }
+
     private async Task ReloadServer()
     {
+        if (!await IsAdminAsync()) return;
         _busy = true;
         var (success, output) = await VpnAdmin.ReloadServerAsync();
         _busy = false;
@@ -205,6 +217,7 @@
 
     private async Task UninstallOpenVpn()
     {
+        if (!await IsAdminAsync()) return;
         _busy = true;
         _showUninstallLog = true;
         _uninstallLogs.Clear();

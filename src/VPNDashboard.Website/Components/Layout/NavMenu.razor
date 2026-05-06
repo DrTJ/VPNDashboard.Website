@@ -36,13 +36,25 @@
 }
 else
 {
+    <AuthorizeView Roles="Admin">
+        <li class="nav-item">
+            <a href="/setup" class="nav-link @(currentUrl == "setup" ? "active" : "")">
+                <i class="nav-icon bi bi-gear"></i>
+                <p>Setup OpenVPN</p>
+            </a>
+        </li>
+    </AuthorizeView>
+}
+
+<AuthorizeView Roles="Admin">
+    <li class="nav-header">ADMINISTRATION</li>
     <li class="nav-item">
-        <a href="/setup" class="nav-link @(currentUrl == "setup" ? "active" : "")">
-            <i class="nav-icon bi bi-gear"></i>
-            <p>Setup OpenVPN</p>
+        <a href="/account/users" class="nav-link @(currentUrl == "account/users" ? "active" : "")">
+            <i class="nav-icon bi bi-person-gear"></i>
+            <p>Users</p>
         </a>
     </li>
-}
+</AuthorizeView>
 
 <li class="nav-header">HELP</li>
 <li class="nav-item">
