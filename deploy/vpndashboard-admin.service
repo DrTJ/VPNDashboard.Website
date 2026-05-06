@@ -15,7 +15,16 @@ SyslogIdentifier=vpndashboard-admin
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://127.0.0.1:5051
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+Environment=DOTNET_NOLOGO=1
 Environment=DOTNET_ROOT=/usr/share/dotnet
+# The service user is created with --no-create-home, so /home/vpndashadmin
+# doesn't exist. Point dotnet/NuGet/HOME at a writable directory the user
+# owns; otherwise `dotnet publish` fails on first run trying to write to
+# ~/.dotnet, ~/.nuget, etc.
+Environment=HOME=/var/lib/vpndashboard-admin
+Environment=DOTNET_CLI_HOME=/var/lib/vpndashboard-admin/.dotnet
+Environment=NUGET_PACKAGES=/var/lib/vpndashboard-admin/.nuget/packages
+Environment=XDG_DATA_HOME=/var/lib/vpndashboard-admin/.local/share
 
 [Install]
 WantedBy=multi-user.target

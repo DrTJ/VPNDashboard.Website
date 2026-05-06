@@ -60,7 +60,10 @@ mkdir -p "$INSTALL_DIR" \
          "$DATA_DIR" \
          "$DATA_DIR/keys" \
          "$DATA_DIR/build" \
-         "$DATA_DIR/artifacts"
+         "$DATA_DIR/artifacts" \
+         "$DATA_DIR/.dotnet" \
+         "$DATA_DIR/.nuget/packages" \
+         "$DATA_DIR/.local/share"
 
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"

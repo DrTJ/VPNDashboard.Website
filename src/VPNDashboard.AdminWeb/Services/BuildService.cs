@@ -71,7 +71,8 @@ public class BuildService : IBuildService
                 progress.Report("  Removed appsettings.Development.json");
             }
 
-            var tarName = $"vpndashboard-{branch}-{commit.ShortSha}.tar.gz";
+            var builtAt = DateTime.UtcNow;
+            var tarName = $"vpndashboard-{branch}-{commit.ShortSha}-{builtAt:yyyyMMddHHmm}.tar.gz";
             var tarPath = Path.Combine(artifactDir, tarName);
 
             progress.Report($"=== Creating {tarName} ===");
@@ -86,7 +87,7 @@ public class BuildService : IBuildService
                 CommitMessage = commit.Message,
                 CommitAuthor = commit.Author,
                 CommitDate = commit.Date,
-                BuiltAt = DateTime.UtcNow,
+                BuiltAt = builtAt,
                 SizeBytes = fileInfo.Length
             };
 
@@ -97,6 +98,19 @@ public class BuildService : IBuildService
                 .FirstOrDefaultAsync(a => a.CommitSha == commit.Sha && a.Branch == branch, ct);
             if (existing != null)
             {
+                // The artifact filename now includes a build timestamp, so each
+                // rebuild produces a new file. Remove the previous file on disk
+                // before overwriting the DB row, otherwise stale tarballs pile up.
+                if (!string.Equals(existing.FileName, artifact.FileName, StringComparison.Ordinal))
+                {
+                    var oldPath = Path.Combine(artifactDir, existing.FileName);
+                    if (File.Exists(oldPath))
+                    {
+                        try { File.Delete(oldPath); }
+                        catch (Exception ex) { progress.Report($"  (could not delete old artifact {existing.FileName}: {ex.Message})"); }
+                    }
+                }
+
                 existing.FileName = artifact.FileName;
                 existing.BuiltAt = artifact.BuiltAt;
                 existing.SizeBytes = artifact.SizeBytes;
