@@ -1,0 +1,36 @@
+﻿@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>Error - VPN Dashboard</PageTitle>
+
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8">
+        <div class="card card-danger card-outline">
+            <div class="card-header">
+                <h3 class="card-title">An error occurred</h3>
+            </div>
+            <div class="card-body">
+                <h5>Error processing your request.</h5>
+                <p class="text-muted">An unexpected error occurred while processing your request. Please try again.</p>
+
+                @if (ShowRequestId)
+                {
+                    <p>
+                        <strong>Request ID:</strong> <code>@RequestId</code>
+                    </p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

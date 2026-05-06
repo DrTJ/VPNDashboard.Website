@@ -1,0 +1,32 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.csproj.user
+*.sln.docstates
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Secrets
+appsettings.*.local.json
+*.pfx
+*.p12
+
+## SQLite
+*.db
+*.db-shm
+*.db-wal
+
+## Build output
+publish/
+out/

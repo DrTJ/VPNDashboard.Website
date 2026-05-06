@@ -1,0 +1,202 @@
+@page "/setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject OpenVpnReader VpnReader
+@inject OpenVpnInstaller VpnInstaller
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.SignalR.Client
+
+<PageTitle>Setup OpenVPN - VPN Dashboard</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">OpenVPN Setup Wizard</h3></div>
+        </div>
+    </div>
+</div>
+
+@if (VpnReader.IsInstalled)
+{
+    <div class="callout callout-success">
+        <h5>OpenVPN is already installed</h5>
+        <p>Go to the <a href="/">Dashboard</a> to manage your VPN server.</p>
+    </div>
+}
+else if (!_installing)
+{
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Step @(_step + 1) of 4</h3>
+        </div>
+        <div class="card-body">
+            @switch (_step)
+            {
+                case 0:
+                    <h5>Protocol &amp; Port</h5>
+                    <div class="mb-3">
+                        <label class="form-label">Protocol</label>
+                        <select class="form-select" @bind="_protocol" style="max-width: 300px">
+                            <option value="1">UDP (recommended)</option>
+                            <option value="2">TCP</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Port</label>
+                        <input type="number" class="form-control" @bind="_port" style="max-width: 300px" />
+                    </div>
+                    break;
+
+                case 1:
+                    <h5>DNS Server</h5>
+                    <div class="mb-3">
+                        <label class="form-label">Select DNS for clients</label>
+                        <select class="form-select" @bind="_dns" style="max-width: 400px">
+                            <option value="1">Default system resolvers</option>
+                            <option value="2">Google (8.8.8.8, 8.8.4.4)</option>
+                            <option value="3">Cloudflare (1.1.1.1, 1.0.0.1)</option>
+                            <option value="4">OpenDNS (208.67.222.222, 208.67.220.220)</option>
+                            <option value="5">Quad9 (9.9.9.9, 149.112.112.112)</option>
+                            <option value="6">Gcore (95.85.95.85, 2.56.220.2)</option>
+                            <option value="7">AdGuard (94.140.14.14, 94.140.15.15)</option>
+                        </select>
+                    </div>
+                    break;
+
+                case 2:
+                    <h5>First Client</h5>
+                    <div class="mb-3">
+                        <label class="form-label">Name for the first VPN client</label>
+                        <input type="text" class="form-control" @bind="_clientName" placeholder="e.g. phone, laptop"
+                               style="max-width: 300px" />
+                        <div class="form-text">Only letters, numbers, hyphens and underscores.</div>
+                    </div>
+                    break;
+
+                case 3:
+                    <h5>Review</h5>
+                    <div class="callout callout-info">
+                        <dl class="row mb-0">
+                            <dt class="col-sm-4">Protocol</dt>
+                            <dd class="col-sm-8">@(_protocol == "1" ? "UDP" : "TCP")</dd>
+                            <dt class="col-sm-4">Port</dt>
+                            <dd class="col-sm-8">@_port</dd>
+                            <dt class="col-sm-4">DNS</dt>
+                            <dd class="col-sm-8">@GetDnsName()</dd>
+                            <dt class="col-sm-4">First Client</dt>
+                            <dd class="col-sm-8">@_clientName</dd>
+                        </dl>
+                    </div>
+                    <p>Click <strong>Install OpenVPN</strong> to begin. This takes 1-2 minutes.</p>
+                    break;
+            }
+        </div>
+        <div class="card-footer">
+            @if (_step > 0)
+            {
+                <button class="btn btn-secondary me-2" @onclick="() => _step--">
+                    <i class="bi bi-arrow-left me-1"></i> Back
+                </button>
+            }
+            @if (_step < 3)
+            {
+                <button class="btn btn-primary" @onclick="() => _step++">
+                    Next <i class="bi bi-arrow-right ms-1"></i>
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-success" @onclick="StartInstall">
+                    <i class="bi bi-play-circle me-1"></i> Install OpenVPN
+                </button>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                Installing OpenVPN...
+            </h3>
+        </div>
+        <div class="card-body">
+            <pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto; font-size: 0.85rem;"
+                 @ref="_logElement">@string.Join('\n', _installLogs)</pre>
+        </div>
+    </div>
+}
+
+@code {
+    private int _step;
+    private string _protocol = "1";
+    private string _port = "1194";
+    private string _dns = "1";
+    private string _clientName = "client";
+    private bool _installing;
+    private List<string> _installLogs = new();
+    private ElementReference _logElement;
+    private HubConnection? _hubConnection;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/installer"))
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.On<string>("InstallerLog", (line) =>
+            {
+                _installLogs.Add(line);
+                InvokeAsync(StateHasChanged);
+            });
+
+            _hubConnection.On<bool>("InstallerComplete", (success) =>
+            {
+                if (success)
+                {
+                    InvokeAsync(() => Navigation.NavigateTo("/", forceLoad: true));
+                }
+                else
+                {
+                    _installLogs.Add("[ERROR] Installation failed. Check logs above.");
+                    _installing = false;
+                    InvokeAsync(StateHasChanged);
+                }
+            });
+
+            await _hubConnection.StartAsync();
+        }
+    }
+
+    private async Task StartInstall()
+    {
+        _installing = true;
+        _installLogs.Clear();
+
+        await VpnInstaller.InstallAsync(_protocol, _port, _dns, _clientName);
+    }
+
+    private string GetDnsName() => _dns switch
+    {
+        "1" => "Default system resolvers",
+        "2" => "Google (8.8.8.8)",
+        "3" => "Cloudflare (1.1.1.1)",
+        "4" => "OpenDNS",
+        "5" => "Quad9",
+        "6" => "Gcore",
+        "7" => "AdGuard",
+        _ => "Unknown"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+            await _hubConnection.DisposeAsync();
+    }
+}

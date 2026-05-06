@@ -1,0 +1,126 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject OpenVpnReader VpnReader
+
+<PageTitle>Dashboard - VPN Dashboard</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Dashboard</h3></div>
+        </div>
+    </div>
+</div>
+
+@if (!VpnReader.IsInstalled)
+{
+    <div class="row">
+        <div class="col-12">
+            <div class="callout callout-warning">
+                <h5>OpenVPN is not installed</h5>
+                <p>Run the <a href="/setup">Setup Wizard</a> to install and configure OpenVPN on this server.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    var status = VpnReader.GetServerStatus();
+
+    <div class="row">
+        <!-- Total Profiles -->
+        <div class="col-lg-3 col-6">
+            <div class="small-box text-bg-info">
+                <div class="inner">
+                    <h3>@status.TotalProfiles</h3>
+                    <p>Total Profiles</p>
+                </div>
+                <div class="small-box-icon">
+                    <i class="bi bi-people"></i>
+                </div>
+                <a href="/clients" class="small-box-footer">
+                    View Profiles <i class="bi bi-arrow-right-circle-fill"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Active -->
+        <div class="col-lg-3 col-6">
+            <div class="small-box text-bg-success">
+                <div class="inner">
+                    <h3>@status.ActiveProfiles</h3>
+                    <p>Active Profiles</p>
+                </div>
+                <div class="small-box-icon">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+                <a href="/clients" class="small-box-footer">
+                    Manage <i class="bi bi-arrow-right-circle-fill"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Revoked -->
+        <div class="col-lg-3 col-6">
+            <div class="small-box text-bg-danger">
+                <div class="inner">
+                    <h3>@status.RevokedProfiles</h3>
+                    <p>Revoked</p>
+                </div>
+                <div class="small-box-icon">
+                    <i class="bi bi-x-circle"></i>
+                </div>
+                <a href="/clients" class="small-box-footer">
+                    Details <i class="bi bi-arrow-right-circle-fill"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Connected -->
+        <div class="col-lg-3 col-6">
+            <div class="small-box text-bg-warning">
+                <div class="inner">
+                    <h3>@status.ConnectedClients</h3>
+                    <p>Connected Now</p>
+                </div>
+                <div class="small-box-icon">
+                    <i class="bi bi-broadcast"></i>
+                </div>
+                <a href="/connected" class="small-box-footer">
+                    Live View <i class="bi bi-arrow-right-circle-fill"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="info-box">
+                <span class="info-box-icon text-bg-info"><i class="bi bi-hdd-rack"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">Server Status</span>
+                    <span class="info-box-number">
+                        @if (status.IsInstalled)
+                        {
+                            <span class="badge text-bg-success">Installed</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary">Not Installed</span>
+                        }
+                    </span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="info-box">
+                <span class="info-box-icon text-bg-success"><i class="bi bi-ethernet"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">Connection</span>
+                    <span class="info-box-number">@status.Protocol.ToUpperInvariant() : @status.Port</span>
+                    <span class="info-box-text">@status.Subnet</span>
+                </div>
+            </div>
+        </div>
+    </div>
+}

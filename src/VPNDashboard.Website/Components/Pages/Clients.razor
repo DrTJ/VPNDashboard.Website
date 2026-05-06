@@ -1,0 +1,257 @@
+@page "/clients"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject OpenVpnReader VpnReader
+@inject OpenVpnAdmin VpnAdmin
+@inject IJSRuntime JS
+
+<PageTitle>Client Profiles - VPN Dashboard</PageTitle>
+
+<div class="app-content-header">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-sm-6"><h3 class="mb-0">Client Profiles</h3></div>
+            <div class="col-sm-6 text-end">
+                <button class="btn btn-primary" @onclick="ShowAddDialog">
+                    <i class="bi bi-plus-circle me-1"></i> Add Client
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") alert-dismissible">
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+        @_message
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">All Profiles</h3>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Expiry</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var profile in _profiles)
+                {
+                    <tr>
+                        <td>
+                            <i class="bi bi-person me-1"></i>
+                            @profile.Name
+                        </td>
+                        <td>
+                            @switch (profile.Status)
+                            {
+                                case ClientStatus.Valid:
+                                    <span class="badge text-bg-success">Active</span>
+                                    break;
+                                case ClientStatus.Revoked:
+                                    <span class="badge text-bg-danger">Revoked</span>
+                                    break;
+                                case ClientStatus.Expired:
+                                    <span class="badge text-bg-warning">Expired</span>
+                                    break;
+                            }
+                        </td>
+                        <td>
+                            @if (profile.Status == ClientStatus.Revoked && profile.RevocationDate.HasValue)
+                            {
+                                <span class="text-danger">Revoked @profile.RevocationDate.Value.ToString("yyyy-MM-dd")</span>
+                            }
+                            else if (profile.ExpiryDate.HasValue)
+                            {
+                                @profile.ExpiryDate.Value.ToString("yyyy-MM-dd")
+                            }
+                        </td>
+                        <td>
+                            @if (profile.Status == ClientStatus.Valid)
+                            {
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => DownloadOvpn(profile.Name)" disabled="@_busy">
+                                    <i class="bi bi-download"></i> .ovpn
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmRevoke(profile.Name)" disabled="@_busy">
+                                    <i class="bi bi-x-circle"></i> Revoke
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (!_profiles.Any())
+                {
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-4">No client profiles found</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Client Modal -->
+@if (_showAddModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Client</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showAddModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Client Name</label>
+                        <input type="text" class="form-control" @bind="_newClientName"
+                               placeholder="e.g. phone, laptop, john" />
+                        <div class="form-text">Only letters, numbers, hyphens and underscores are allowed.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showAddModal = false" disabled="@_busy">Cancel</button>
+                    <button class="btn btn-primary" @onclick="AddClient" disabled="@_busy">
+                        @if (_busy)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Add Client
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Revoke Confirmation Modal -->
+@if (_showRevokeModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Revoke Client</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => _showRevokeModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to revoke <strong>@_revokeClientName</strong>?</p>
+                    <p class="text-danger">This action cannot be undone. The client will immediately lose VPN access.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _showRevokeModal = false" disabled="@_busy">Cancel</button>
+                    <button class="btn btn-danger" @onclick="RevokeClient" disabled="@_busy">
+                        @if (_busy)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Revoke
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ClientProfile> _profiles = new();
+    private bool _showAddModal;
+    private bool _showRevokeModal;
+    private string _newClientName = string.Empty;
+    private string? _revokeClientName;
+    private string? _message;
+    private bool _messageIsError;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        LoadProfiles();
+    }
+
+    private void LoadProfiles()
+    {
+        _profiles = VpnReader.GetClientProfiles();
+    }
+
+    private void ShowAddDialog()
+    {
+        _newClientName = string.Empty;
+        _showAddModal = true;
+    }
+
+    private async Task AddClient()
+    {
+        if (string.IsNullOrWhiteSpace(_newClientName))
+            return;
+
+        _busy = true;
+        var (success, output) = await VpnAdmin.AddClientAsync(_newClientName);
+        _busy = false;
+        _showAddModal = false;
+
+        if (success)
+        {
+            _message = $"Client '{OpenVpnAdmin.SanitizeClientName(_newClientName)}' added successfully.";
+            _messageIsError = false;
+        }
+        else
+        {
+            _message = $"Failed to add client: {output}";
+            _messageIsError = true;
+        }
+
+        LoadProfiles();
+    }
+
+    private void ConfirmRevoke(string name)
+    {
+        _revokeClientName = name;
+        _showRevokeModal = true;
+    }
+
+    private async Task RevokeClient()
+    {
+        if (string.IsNullOrEmpty(_revokeClientName))
+            return;
+
+        _busy = true;
+        var (success, output) = await VpnAdmin.RevokeClientAsync(_revokeClientName);
+        _busy = false;
+        _showRevokeModal = false;
+
+        if (success)
+        {
+            _message = $"Client '{_revokeClientName}' revoked successfully.";
+            _messageIsError = false;
+        }
+        else
+        {
+            _message = $"Failed to revoke client: {output}";
+            _messageIsError = true;
+        }
+
+        LoadProfiles();
+    }
+
+    private async Task DownloadOvpn(string clientName)
+    {
+        var content = VpnReader.BuildOvpnFile(clientName);
+        if (content == null)
+        {
+            _message = $"Could not build .ovpn file for '{clientName}'. The inline key file may be missing.";
+            _messageIsError = true;
+            return;
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        var base64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("downloadFile", $"{clientName}.ovpn", base64);
+    }
+}

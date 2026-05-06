@@ -1,0 +1,53 @@
+﻿@inject NavigationManager Navigation
+@inject OpenVpnReader VpnReader
+
+@{
+    var currentUrl = Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/');
+    var installed = VpnReader.IsInstalled;
+}
+
+<li class="nav-item">
+    <a href="/" class="nav-link @(currentUrl == "" ? "active" : "")">
+        <i class="nav-icon bi bi-speedometer2"></i>
+        <p>Dashboard</p>
+    </a>
+</li>
+
+@if (installed)
+{
+    <li class="nav-item">
+        <a href="/clients" class="nav-link @(currentUrl == "clients" ? "active" : "")">
+            <i class="nav-icon bi bi-people"></i>
+            <p>Client Profiles</p>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a href="/connected" class="nav-link @(currentUrl == "connected" ? "active" : "")">
+            <i class="nav-icon bi bi-broadcast"></i>
+            <p>Connected Clients</p>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a href="/server" class="nav-link @(currentUrl == "server" ? "active" : "")">
+            <i class="nav-icon bi bi-hdd-rack"></i>
+            <p>Server</p>
+        </a>
+    </li>
+}
+else
+{
+    <li class="nav-item">
+        <a href="/setup" class="nav-link @(currentUrl == "setup" ? "active" : "")">
+            <i class="nav-icon bi bi-gear"></i>
+            <p>Setup OpenVPN</p>
+        </a>
+    </li>
+}
+
+<li class="nav-header">HELP</li>
+<li class="nav-item">
+    <a href="/docs" class="nav-link @(currentUrl.StartsWith("docs") ? "active" : "")">
+        <i class="nav-icon bi bi-book"></i>
+        <p>Documentation</p>
+    </a>
+</li>

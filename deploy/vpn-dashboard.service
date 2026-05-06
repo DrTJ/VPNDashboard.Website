@@ -1,0 +1,19 @@
+[Unit]
+Description=VPN Dashboard Web Application
+After=network.target
+
+[Service]
+Type=notify
+User=vpndash
+Group=vpndash
+WorkingDirectory=/opt/vpn-dashboard
+ExecStart=/usr/bin/dotnet /opt/vpn-dashboard/VPNDashboard.Website.dll
+Restart=always
+RestartSec=10
+SyslogIdentifier=vpn-dashboard
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,2 @@
+# Allow vpndash user to run the helper script without password
+vpndash ALL=(root) NOPASSWD: /usr/local/sbin/vpn-dashboard-helper.sh
