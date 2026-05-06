@@ -60,13 +60,21 @@ echo "[3/9] Setting up directories..."
 mkdir -p "$INSTALL_DIR" "$DATA_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
 
-# 4. Build and publish the app
-echo "[4/9] Publishing the application..."
-if [[ -f "$PROJECT_ROOT/src/VPNDashboard.Website/VPNDashboard.Website.csproj" ]]; then
+# 4. Deploy the application
+echo "[4/9] Deploying the application..."
+if [[ -d "$PROJECT_ROOT/publish" ]]; then
+    cp -r "$PROJECT_ROOT/publish/"* "$INSTALL_DIR/"
+    echo "  Copied pre-built binaries from publish/."
+elif [[ -f "$PROJECT_ROOT/src/VPNDashboard.Website/VPNDashboard.Website.csproj" ]] && command -v dotnet &>/dev/null && dotnet --list-sdks 2>/dev/null | grep -q "^8\\."; then
     dotnet publish "$PROJECT_ROOT/src/VPNDashboard.Website/VPNDashboard.Website.csproj" \
         -c Release -o "$INSTALL_DIR" --nologo -v quiet
+    echo "  Built and published from source."
 else
-    echo "WARNING: Project not found. Copy published output to $INSTALL_DIR manually."
+    echo "ERROR: No pre-built binaries found in publish/ and no .NET SDK available to build."
+    echo "  Build on your development machine first:"
+    echo "    dotnet publish src/VPNDashboard.Website/VPNDashboard.Website.csproj -c Release -o publish"
+    echo "  Then re-run this installer."
+    exit 1
 fi
 
 # Copy docs

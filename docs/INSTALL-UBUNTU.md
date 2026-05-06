@@ -8,7 +8,14 @@ This guide walks through installing the VPN Dashboard on an Ubuntu server.
 - **TUN device** available (`/dev/net/tun`)
 - **OpenVPN does NOT need to be pre-installed** — the dashboard's Setup Wizard will install it for you. If you've already installed it via Nyr's script, the dashboard will detect it automatically.
 
-## Step 1: Install .NET 8 Runtime
+## Step 1: Install Git and required tools
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl wget
+```
+
+## Step 2: Install .NET 8 Runtime
 
 Add the Microsoft package repository and install the ASP.NET Core 8 runtime:
 
@@ -29,22 +36,22 @@ sudo apt-get install -y aspnetcore-runtime-8.0
 
 > **Note:** On Ubuntu 24.04+, .NET 8 may also be available directly via `sudo apt-get install -y dotnet-runtime-8.0 aspnetcore-runtime-8.0` without adding the Microsoft repo.
 
-## Step 2: Install nginx and other dependencies
+## Step 3: Install nginx and other dependencies
 
 ```bash
 sudo apt-get install -y nginx openssl acl
 ```
 
-## Step 3: Get the Dashboard
+## Step 4: Get the Dashboard
 
-Clone the repository or download a release tarball:
+Clone the repository:
 
 ```bash
 git clone <repo-url> /tmp/vpn-dashboard
 cd /tmp/vpn-dashboard
 ```
 
-## Step 4: Run the Installer
+## Step 5: Run the Installer
 
 ```bash
 sudo ./deploy/install-ubuntu.sh
@@ -64,13 +71,13 @@ The installer will:
 10. Enable the OpenVPN status log (if OpenVPN is already installed)
 11. Prompt for initial admin email and password
 
-## Step 5: First Login
+## Step 6: First Login
 
 Open `http://<server-ip>/` in your browser. You'll see the AdminLTE login page.
 
 Log in with the admin email and password you provided during installation.
 
-## Step 6: Install OpenVPN (if not already installed)
+## Step 7: Install OpenVPN (if not already installed)
 
 If OpenVPN is not yet installed, the dashboard will automatically redirect you to the **Setup Wizard** (`/setup`).
 
@@ -87,7 +94,7 @@ Click **Install OpenVPN** and watch the live installation log. This takes 1-2 mi
 
 When it finishes, you'll be redirected to the dashboard. The first `.ovpn` profile is available on the Clients page.
 
-## Step 7: Optional — Real TLS Certificate
+## Step 8: Optional — Real TLS Certificate
 
 Replace the self-signed certificate with Let's Encrypt:
 
@@ -96,7 +103,7 @@ sudo apt-get install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d vpn.example.com
 ```
 
-## Step 8: Verification Checklist
+## Step 9: Verification Checklist
 
 - [ ] `systemctl is-active vpn-dashboard` returns `active`
 - [ ] `systemctl is-active nginx` returns `active`
@@ -107,7 +114,7 @@ sudo certbot --nginx -d vpn.example.com
 - [ ] Can revoke a client
 - [ ] Connected page updates live when a VPN client connects
 
-## Step 9: Clean Up Seed Credentials
+## Step 10: Clean Up Seed Credentials
 
 After your first login, remove the one-shot admin credentials:
 

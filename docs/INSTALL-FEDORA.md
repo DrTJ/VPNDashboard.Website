@@ -8,7 +8,13 @@ This guide walks through installing the VPN Dashboard on a Fedora server.
 - **TUN device** available (`/dev/net/tun`)
 - **OpenVPN does NOT need to be pre-installed** — the dashboard's Setup Wizard will install it for you. If you've already installed it via Nyr's script, the dashboard will detect it automatically.
 
-## Step 1: Install .NET 8 Runtime and nginx
+## Step 1: Install Git and required tools
+
+```bash
+sudo dnf install -y git curl
+```
+
+## Step 2: Install .NET 8 Runtime and nginx
 
 On **Fedora 39+**, the ASP.NET Core runtime is available directly from the default repos:
 
@@ -46,16 +52,16 @@ sudo dnf install -y nginx policycoreutils-python-utils openssl
 > The `deploy/install.sh` script handles all of this automatically — it tries the dnf package
 > first, falls back to the Microsoft repo, and finally to `dotnet-install.sh` if needed.
 
-## Step 2: Get the Dashboard
+## Step 3: Get the Dashboard
 
-Clone the repository or download a release tarball:
+Clone the repository:
 
 ```bash
 git clone <repo-url> /tmp/vpn-dashboard
 cd /tmp/vpn-dashboard
 ```
 
-## Step 3: Run the Installer
+## Step 4: Run the Installer
 
 ```bash
 sudo ./deploy/install.sh
@@ -76,13 +82,13 @@ The installer will:
 11. Enable the OpenVPN status log (if OpenVPN is already installed)
 12. Prompt for initial admin email and password
 
-## Step 4: First Login
+## Step 5: First Login
 
 Open `http://<server-ip>/` in your browser. You'll see the AdminLTE login page.
 
 Log in with the admin email and password you provided during installation.
 
-## Step 5: Install OpenVPN (if not already installed)
+## Step 6: Install OpenVPN (if not already installed)
 
 If OpenVPN is not yet installed, the dashboard will automatically redirect you to the **Setup Wizard** (`/setup`).
 
@@ -99,7 +105,7 @@ Click **Install OpenVPN** and watch the live installation log. This takes 1-2 mi
 
 When it finishes, you'll be redirected to the dashboard. The first `.ovpn` profile is available on the Clients page.
 
-## Step 6: Optional — Real TLS Certificate
+## Step 7: Optional — Real TLS Certificate
 
 Replace the self-signed certificate with Let's Encrypt:
 
@@ -108,7 +114,7 @@ sudo dnf install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d vpn.example.com
 ```
 
-## Step 7: Verification Checklist
+## Step 8: Verification Checklist
 
 - [ ] `systemctl is-active vpn-dashboard` returns `active`
 - [ ] `systemctl is-active nginx` returns `active`
@@ -119,7 +125,7 @@ sudo certbot --nginx -d vpn.example.com
 - [ ] Can revoke a client
 - [ ] Connected page updates live when a VPN client connects
 
-## Step 8: Clean Up Seed Credentials
+## Step 9: Clean Up Seed Credentials
 
 After your first login, remove the one-shot admin credentials:
 
