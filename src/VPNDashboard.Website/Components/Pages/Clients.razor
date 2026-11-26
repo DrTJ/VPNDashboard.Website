@@ -4,7 +4,6 @@
 @inject OpenVpnReader VpnReader
 @inject OpenVpnAdmin VpnAdmin
 @inject SubscriptionService Subs
-@inject IJSRuntime JS
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
 
@@ -85,9 +84,14 @@
                         <td>
                             @if (profile.Status == ClientStatus.Valid)
                             {
-                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => DownloadOvpn(profile.Name)" disabled="@_busy">
+                                @* A plain link to the download endpoint: the browser fetches the file itself, so it
+                                   works without JS interop and in mobile/in-app browsers that ignore data: URLs.
+                                   data-enhance-nav keeps Blazor from intercepting the click. *@
+                                <a class="btn btn-sm btn-outline-primary me-1 @(_busy ? "disabled" : null)"
+                                   href="@($"/api/download/{Uri.EscapeDataString(profile.Name)}.ovpn")"
+                                   data-enhance-nav="false">
                                     <i class="bi bi-download"></i> .ovpn
-                                </button>
+                                </a>
                                 <AuthorizeView Roles="Admin">
                                     <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmRevoke(profile.Name)" disabled="@_busy">
                                         <i class="bi bi-x-circle"></i> Revoke
@@ -324,20 +328,5 @@
         }
 
         LoadProfiles();
-    }
-
-    private async Task DownloadOvpn(string clientName)
-    {
-        var content = VpnReader.BuildOvpnFile(clientName);
-        if (content == null)
-        {
-            _message = $"Could not build .ovpn file for '{clientName}'. The inline key file may be missing.";
-            _messageIsError = true;
-            return;
-        }
-
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-        var base64 = Convert.ToBase64String(bytes);
-        await JS.InvokeVoidAsync("downloadFile", $"{clientName}.ovpn", base64);
     }
 }
