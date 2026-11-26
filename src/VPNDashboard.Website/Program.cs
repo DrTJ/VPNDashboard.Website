@@ -175,9 +175,23 @@ app.MapGet("/api/download/{clientName}.ovpn", (string clientName, OpenVpnReader 
     if (context.User.Identity?.IsAuthenticated != true)
         return Results.Unauthorized();
 
-    var content = reader.BuildOvpnFile(clientName);
+    // Profile names only ever contain [0-9a-zA-Z_-]; anything else cannot be a real profile
+    // and must not reach the file system.
+    var content = OpenVpnAdmin.SanitizeClientName(clientName) == clientName
+        ? reader.BuildOvpnFile(clientName)
+        : null;
     if (content == null)
-        return Results.NotFound();
+    {
+        // The Clients page links here directly, so say what went wrong instead of a blank 404.
+        return Results.Text(
+            $"Could not build the .ovpn file for '{clientName}'. The inline key file may be missing " +
+            "or not readable by the dashboard service.",
+            "text/plain",
+            statusCode: StatusCodes.Status404NotFound);
+    }
+
+    // The profile embeds the client's private key.
+    context.Response.Headers.CacheControl = "no-store";
 
     return Results.File(
         System.Text.Encoding.UTF8.GetBytes(content),
